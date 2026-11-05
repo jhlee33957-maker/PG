@@ -51,7 +51,7 @@
    git remote add origin https://github.com/<계정>/<저장소>.git
    git push -u origin main
    ```
-__
+____
 5. GitHub 저장소 설정
    - `Settings > Collaborators`에서 팀원 초대
    - `Settings > Branches > Add rule` (`main`): **Require a pull request before merging**, **Require approvals: 1** 체크
