@@ -1,0 +1,62 @@
+# ===== Unity가 자동 생성하는 폴더 (절대 커밋하지 않음) =====
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# .meta 파일은 반드시 커밋 (에셋 참조가 깨지지 않도록)
+!/[Aa]ssets/**/*.meta
+
+/[Aa]ssets/Plugins/Editor/JetBrains*
+
+# ===== IDE / 에디터 =====
+.vs/
+.idea/
+.gradle/
+.consulo/
+ExportedObj/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# ===== Unity 크래시 / 빌드 산출물 =====
+sysinfo.txt
+mono_crash.*
+crashlytics-build.properties
+*.apk
+*.aab
+*.app
+*.exe
+*.unitypackage
+*.unitypackage.meta
+
+# Addressables 빌드 결과
+/[Aa]ssets/[Ss]treamingAssets/aa.meta
+/[Aa]ssets/[Ss]treamingAssets/aa/*
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== AI 도구 개인 설정 (공용 설정은 커밋, 개인 설정은 제외) =====
+.claude/settings.local.json

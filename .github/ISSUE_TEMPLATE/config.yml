@@ -1,0 +1,2 @@
+# 템플릿 없이 빈 Issue를 만드는 것을 막음 → 모든 작업이 '문제 정의'부터 시작하게
+blank_issues_enabled: false
