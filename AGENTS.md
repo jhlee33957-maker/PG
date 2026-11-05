@@ -28,7 +28,6 @@ Assets/_Project/
   Data/
     Stages/    StageSpec 에셋
     Rules/     RuleEffect 에셋
-  Resources/   CSV 데이터 테이블 (Stage.csv 등). 형식과 규칙은 docs/data-tables.md를 따른다
   Scenes/
   Prefabs/
   Art/
@@ -75,4 +74,3 @@ type: feat | fix | refactor | rule | stage | docs | chore
 | 날짜 | 작성자 | 추가/변경한 규칙 | 계기 (AI가 무엇을 틀렸나) |
 |---|---|---|---|
 | 2026-11-05 | (이름) | 초안 작성 | 저장소 세팅 |
-| 2026-11-05 | (이름) | 폴더 구조에 `Resources/`(CSV 테이블) 추가, 규칙은 docs/data-tables.md 참조 | 실수 아님. CSV 데이터 도입 (decisions/002) |
