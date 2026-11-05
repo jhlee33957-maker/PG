@@ -1,0 +1,3 @@
+﻿Id,Text,Pattern
+NounIsNoun,{0}은(는) {1}이다,Noun|Noun
+NounVerb,{0}은(는) {1},Noun|Verb
