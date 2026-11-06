@@ -1,7 +1,7 @@
-﻿Id,DisplayName,Type,IsStatic
-Person,사람,Noun,FALSE
-Pigeon,비둘기,Noun,FALSE
-Move,움직인다,Verb,FALSE
-Wall,벽,Noun,TRUE
-Exit,출구,Noun,TRUE
-Fly,난다,Verb,FALSE
+﻿Id,DisplayName,Type
+Person,사람,Noun
+Pigeon,비둘기,Noun
+Move,움직인다,Verb
+Wall,벽,Noun
+Exit,출구,Noun
+Fly,난다,Verb

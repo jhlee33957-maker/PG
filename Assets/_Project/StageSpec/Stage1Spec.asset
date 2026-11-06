@@ -16,8 +16,8 @@ MonoBehaviour:
   _templateIds:
   - //Hello World!
   - 
-  - NounVerb, Exit Move
-  - NounVerb, Exit Fly
+  - NounIsNoun, Exit Move
+  - NounIsNoun, Exit Fly
   _wordPool:
   - _value: Pigeon
   - _value: Pigeon

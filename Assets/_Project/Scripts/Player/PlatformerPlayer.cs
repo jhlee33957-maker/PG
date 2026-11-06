@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
 using CoffeeSpec.Entities;
+using CoffeeSpec.UI;
 
 namespace CoffeeSpec.Player
 {
@@ -80,8 +81,18 @@ namespace CoffeeSpec.Player
         {
             var kb = Keyboard.current;
             if (kb == null) return;
-            // 기획서가 열려 있으면(시간 정지) 입력을 받지 않는다. 기획서를 보는 중에 공격·점프가 나가지 않도록
-            if (Time.timeScale == 0f) return;
+            // 기획서가 열려 있으면(미리보기로 시간이 흐르는 중 포함) 입력을 받지 않는다.
+            // 이전 입력이 남아 계속 움직이지 않도록 입력 상태도 비운다
+            if (SpecPanel.IsAnyOpen || Time.timeScale == 0f)
+            {
+                _inputX = 0f;
+                _sprintHeld = false;
+                _jumpBufferTimer = 0f;
+                _jumpCutRequested = false;
+                _dashRequested = false;
+                _ruleEntity.InputOverride = false;
+                return;
+            }
 
             float x = 0f;
             if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) x += 1f;
@@ -106,6 +117,8 @@ namespace CoffeeSpec.Player
         private void FixedUpdate()
         {
             float dt = Time.fixedDeltaTime;
+            // 직접 움직일 때만 가로 잠금을 푼다. 속도를 넣기 전에 알려야 이번 프레임부터 움직인다
+            _ruleEntity.SetSelfDriven(_inputX != 0f || IsDashing || _dashRequested);
             UpdateGrounded();
 
             // 규칙으로 나는 중에는 땅에 닿지 않으므로 대쉬를 계속 쓸 수 있게 한다

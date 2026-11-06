@@ -87,14 +87,16 @@ namespace CoffeeSpec.Rules
         {
             if (_specPanel == null) _specPanel = FindAnyObjectByType<SpecPanel>();
             if (_specPanel == null) return;
-            _specPanel.Built += ApplySentences;
+            _specPanel.Built += ResetAndApply;
+            _specPanel.PreviewStarted += ResetAndApply;
             _specPanel.RetryRequested += Retry;
         }
 
         private void OnDisable()
         {
             if (_specPanel == null) return;
-            _specPanel.Built -= ApplySentences;
+            _specPanel.Built -= ResetAndApply;
+            _specPanel.PreviewStarted -= ResetAndApply;
             _specPanel.RetryRequested -= Retry;
         }
 
@@ -103,6 +105,26 @@ namespace CoffeeSpec.Rules
         /// 품사가 맞지 않는 문장은 경고만 남기고 건너뛴다.
         /// </summary>
         public void ApplySentences(IReadOnlyList<Sentence> sentences)
+        {
+            FillSentences(sentences);
+            ReapplyAll();
+        }
+
+        // 빌드와 미리보기: Level을 시작 배치로 다시 깔고 받은 문장을 적용한다.
+        // 이전 판에서 움직이거나 변신한 상태가 남지 않도록 항상 초기화부터 한다
+        private void ResetAndApply(IReadOnlyList<Sentence> sentences)
+        {
+            if (_mapLoader == null) _mapLoader = FindAnyObjectByType<MapLoader>();
+            _cleared = false;
+            ClearScreen.Hide();
+            // 다시 깔린 객체가 등록될 때 이전 문장으로 변신하지 않도록 문장부터 바꾼다
+            FillSentences(sentences);
+            if (_mapLoader != null) _mapLoader.Reload();
+            else Debug.LogError("[RuleManager] 씬에 MapLoader가 없어 레벨을 초기화하지 못함");
+            ReapplyAll();
+        }
+
+        private void FillSentences(IReadOnlyList<Sentence> sentences)
         {
             _sentences.Clear();
             if (sentences != null)
@@ -118,7 +140,6 @@ namespace CoffeeSpec.Rules
                     _sentences.Add(sentence);
                 }
             }
-            ReapplyAll();
         }
 
         // 리트는 씬을 바꾸지 않고 Level 밑 프리팹만 맵 데이터대로 다시 깐다.
@@ -251,6 +272,9 @@ namespace CoffeeSpec.Rules
         /// <summary>두 대상이 닿았다. 양쪽 모두 보고하므로 같은 접촉이 두 번 올 수 있다.</summary>
         public void ReportContact(RuleEntity a, RuleEntity b)
         {
+            // 기획서가 열려 있는 동안(미리보기 포함)은 클리어하지 않는다
+            if (_specPanel != null && _specPanel.IsOpen) return;
+            if (a.IsRemoved || b.IsRemoved) return;
             if (IsExitContact(a, b) || IsExitContact(b, a)) Clear();
         }
 
@@ -291,10 +315,11 @@ namespace CoffeeSpec.Rules
 
         public void Unregister(RuleEntity entity) => _entities.Remove(entity);
 
+        // 공격으로 사라진 대상은 규칙 효과를 받지 않는다. 변신 원본 찾기(FindOriginalEntity)에서는 그대로 쓴다
         public IEnumerable<RuleEntity> GetEntities(WordId id)
         {
             foreach (var e in _entities)
-                if (e != null && e.Id == id) yield return e;
+                if (e != null && !e.IsRemoved && e.Id == id) yield return e;
         }
     }
 }

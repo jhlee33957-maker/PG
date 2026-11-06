@@ -63,9 +63,9 @@ namespace CoffeeSpec.EditorTools
             for (int i = 0; i < words.arraySize; i++)
             {
                 rect.y += Line + Space;
-                string slot = template != null ? $"{i + 1}. {template.Pattern[i]}" : $"{i + 1}.";
+                string slot = template != null ? $"{i + 1}. {template.SlotLabel(i)}" : $"{i + 1}.";
                 // 품사 자리에 맞는 단어만 고를 수 있게 걸러서 보여준다
-                WordType? filter = template != null ? template.Pattern[i] : null;
+                IReadOnlyList<WordType> filter = template != null ? template.Pattern[i] : null;
                 WordIdDrawer.Draw(rect, words.GetArrayElementAtIndex(i), new GUIContent(slot), filter);
             }
 

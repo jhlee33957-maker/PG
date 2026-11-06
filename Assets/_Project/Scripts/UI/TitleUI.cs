@@ -51,7 +51,7 @@ namespace CoffeeSpec.UI
         [SerializeField] private List<StageEntry> _stages = new List<StageEntry>();
 
         [Header("씬")]
-        [Tooltip("세이브 기록이 없을 때, 그리고 클리어 팝업에서 '예'를 눌렀을 때 이동할 씬")]
+        [Tooltip("클리어 팝업에서 '예'를 눌렀을 때 이동할 씬")]
         [SerializeField] private string _introSceneName = "Intro";
 
         [Header("테스트용 가짜 세이브 (에디터에서만 동작)")]
@@ -124,9 +124,10 @@ namespace CoffeeSpec.UI
 
             SaveData save = LoadSave();
 
+            // 세이브가 없으면 인트로 대신 스테이지 1로 바로 시작한다
             if (save == null)
             {
-                SceneFader.LoadScene(_introSceneName);
+                StartStage(1);
                 return;
             }
 
