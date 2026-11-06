@@ -111,7 +111,7 @@ Rigidbody2D:
   m_Mass: 1
   m_LinearDamping: 0
   m_AngularDamping: 0.05
-  m_GravityScale: 1
+  m_GravityScale: 1.5
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -119,7 +119,7 @@ Rigidbody2D:
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 4
@@ -200,8 +200,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Player.PlatformerPlayer
   _moveSpeed: 6
   _groundAcceleration: 80
+  _colliderCornerRadius: 0.05
   _airAcceleration: 50
-  _jumpSpeed: 12
+  _jumpSpeed: 10.4
   _coyoteTime: 0.1
   _jumpBufferTime: 0.1
   _jumpCutMultiplier: 0.5
