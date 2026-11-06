@@ -12,9 +12,20 @@ namespace CoffeeSpec.UI
         private const string Message = "Clear!";
         private const float FontSize = 120f;
 
+        private static GameObject _current;
+
+        /// <summary>떠 있는 Clear!를 지운다. 리트할 때 쓴다.</summary>
+        public static void Hide()
+        {
+            if (_current != null) UnityEngine.Object.Destroy(_current);
+            _current = null;
+        }
+
         public static void Show()
         {
+            Hide();
             var canvasGo = new GameObject("ClearCanvas");
+            _current = canvasGo;
             var canvas = canvasGo.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = 100;
