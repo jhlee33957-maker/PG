@@ -11,6 +11,7 @@ namespace CoffeeSpec.Rules
     /// CSV의 문장 틀을 골라 태그를 채운 문장을 보관하고, 문장에 든 태그를 보고 효과를 실행한다. 씬에 하나만 둔다.
     /// - 명사|명사: 앞 명사 대상이 뒤 명사로 영구 변신 (태그와 모습)
     /// - 명사|Move: 명사 대상이 문장이 있는 동안 랜덤 이동
+    /// - 명사|Fly: 명사 대상이 문장이 있는 동안 랜덤 높이로 떠서 둥실거림
     /// - 접촉: 플레이어가 Exit 태그 객체에 닿으면 클리어
     /// 실행 중 인스펙터에서 문장 목록을 바꾸면 전체 규칙을 다시 적용한다.
     /// </summary>
@@ -61,6 +62,7 @@ namespace CoffeeSpec.Rules
         private bool _cleared;
 
         private static readonly WordId Exit = new("Exit");
+        private static readonly WordId Fly = new("Fly");
 
         /// <summary>스테이지를 클리어했을 때 알린다. 저장, 다음 스테이지 이동 등은 여기에 구독한다.</summary>
         public event Action Cleared;
@@ -120,7 +122,8 @@ namespace CoffeeSpec.Rules
         }
 
         // 리트는 씬을 바꾸지 않고 Level 밑 프리팹만 맵 데이터대로 다시 깐다.
-        // 기획서 화면은 그대로라 고른 단어가 남고, 지금 문장을 새 객체에 다시 적용한다
+        // 빌드로 적용했던 문장 효과는 버리고 스테이지 시작 상태(인스펙터 문장 목록)로 되돌린 뒤 기획서를 다시 연다.
+        // 기획서에 고른 단어는 그대로 남아 있어서 다시 빌드하면 된다
         private void Retry()
         {
             if (_mapLoader == null) _mapLoader = FindAnyObjectByType<MapLoader>();
@@ -131,8 +134,10 @@ namespace CoffeeSpec.Rules
             }
             _cleared = false;
             ClearScreen.Hide();
+            LoadSetupSentences();
             _mapLoader.Reload();
             ReapplyAll();
+            if (_specPanel != null) _specPanel.Reopen();
         }
         private void OnValidate()
         {
@@ -173,6 +178,13 @@ namespace CoffeeSpec.Rules
 
         private void Rebuild()
         {
+            LoadSetupSentences();
+            ReapplyAll();
+        }
+
+        // 인스펙터 문장 목록(스테이지 시작 상태)으로 문장을 채운다. 적용은 하지 않는다
+        private void LoadSetupSentences()
+        {
             _sentences.Clear();
             foreach (var setup in _sentenceSetups)
             {
@@ -189,7 +201,6 @@ namespace CoffeeSpec.Rules
                 }
                 _sentences.Add(sentence);
             }
-            ReapplyAll();
         }
 
         // 이동 같은 지속 효과를 끈 뒤 문장을 다시 적용한다. 변신은 영구라 되돌리지 않는다
@@ -216,6 +227,8 @@ namespace CoffeeSpec.Rules
             {
                 if (s.Words[i] == WordId.Move) // 효과가 연결된 단어만 여기서 처리한다
                     foreach (var e in GetEntities(subject)) e.SetRandomMove(true);
+                else if (s.Words[i] == Fly)
+                    foreach (var e in GetEntities(subject)) e.SetFly(true);
             }
         }
 

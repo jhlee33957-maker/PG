@@ -12,6 +12,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cb899a4480db8ce428c7eaaa1d4a8a5c, type: 3}
   m_Name: Stage1Spec
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Spec.StageSpec
-  _sentenceCsv: {fileID: 0}
-  _templateIds: []
-  _wordPool: []
+  _sentenceCsv: {fileID: 4900000, guid: f5abd9c34845cae44a9ef8a798e4c23d, type: 3}
+  _templateIds:
+  - //Hello World!
+  - 
+  - NounVerb, Exit Move
+  - NounVerb, Exit Fly
+  _wordPool:
+  - _value: Pigeon
+  - _value: Pigeon
+  - _value: Move
+  - _value: Fly
+  - _value: Exit
+  - _value: Exit
+  - _value: Person

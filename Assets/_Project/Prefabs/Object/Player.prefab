@@ -140,6 +140,15 @@ MonoBehaviour:
   _id: -1
   _moveSpeed: 2
   _directionInterval: 1
+  _colliderCornerRadius: 0.02
+  _groundSnapDistance: 0.1
+  _sinkTolerance: 0.03
+  _flyHeightRange: {x: 6, y: 8}
+  _bobAmplitude: 0.15
+  _bobPeriod: 2
+  _flyFollowStrength: 8
+  _flyMaxSpeed: 6
+  _flyGroundSearchDistance: 20
 --- !u!61 &4049721007065478937
 BoxCollider2D:
   m_ObjectHideFlags: 0
@@ -200,7 +209,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Player.PlatformerPlayer
   _moveSpeed: 6
   _groundAcceleration: 80
-  _colliderCornerRadius: 0.05
   _airAcceleration: 50
   _jumpSpeed: 10.4
   _coyoteTime: 0.1

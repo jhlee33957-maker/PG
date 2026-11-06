@@ -27,6 +27,20 @@ namespace CoffeeSpec.Entities
         [Tooltip("이보다 깊게 바닥에 박히면 바로 빼낸다. 너무 작으면 물리 엔진과 싸워 떨린다 (1/32 = 1픽셀)")]
         [SerializeField, Min(0.01f)] private float _sinkTolerance = 0.03f;
 
+        [Header("날기 (Fly)")]
+        [Tooltip("날기 시작할 때 발밑 바닥에서 띄울 높이 범위(칸). 대상마다 이 안에서 랜덤으로 고른다")]
+        [SerializeField] private Vector2 _flyHeightRange = new(6f, 8f);
+        [Tooltip("떠 있는 높이에서 위아래로 둥실거리는 폭(칸)")]
+        [SerializeField, Min(0f)] private float _bobAmplitude = 0.15f;
+        [Tooltip("둥실거림 한 번(위-아래-위)에 걸리는 시간(초)")]
+        [SerializeField, Min(0.1f)] private float _bobPeriod = 2f;
+        [Tooltip("목표 높이를 따라가는 세기. 클수록 빨리 떠오른다")]
+        [SerializeField, Min(0.1f)] private float _flyFollowStrength = 8f;
+        [Tooltip("떠오르고 내려가는 최대 속도(칸/초)")]
+        [SerializeField, Min(0.1f)] private float _flyMaxSpeed = 6f;
+        [Tooltip("날기 시작할 때 바닥을 찾는 최대 거리(칸). 이 안에 바닥이 없으면 지금 위치를 바닥으로 본다")]
+        [SerializeField, Min(0f)] private float _flyGroundSearchDistance = 20f;
+
         private static readonly RaycastHit2D[] GroundHits = new RaycastHit2D[4];
         private static PhysicsMaterial2D _noFriction;
         private static readonly System.Collections.Generic.List<Collider2D> Overlaps = new();
@@ -45,6 +59,13 @@ namespace CoffeeSpec.Entities
         private float _timer;
         private bool _wasGrounded;
         private float _snapBlockTimer;
+        private float _defaultGravity;
+        private bool _flying;
+        private float _flyBaseY;      // 둥실거림의 가운데 높이 (Rigidbody 위치 기준)
+        private float _bobPhase;      // 대상마다 다르게 둥실거리도록 하는 시작 박자
+        private float _flyTime;
+        private int _flyOffFrame = -1; // 날기가 꺼진 프레임. 같은 프레임에 다시 켜지면 높이를 새로 고르지 않는다
+        private bool _freezeRotationBeforeFly; // Static 대상은 회전이 안 막혀 있을 수 있어서 나는 동안만 막고 끝나면 되돌린다
 
         /// <summary>현재 태그. Is 문장으로 바뀔 수 있다.</summary>
         public WordId Id => _word;
@@ -53,6 +74,8 @@ namespace CoffeeSpec.Entities
         public Sprite OriginalSprite => _originalSprite;
         /// <summary>규칙으로 랜덤 이동 중인지. 플레이어는 이때 좌우 입력을 양보한다.</summary>
         public bool IsRandomMoving => _randomMove;
+        /// <summary>규칙(난다)으로 공중에 떠 있는지. 플레이어는 이때 점프하지 않고 중력을 켜지 않는다.</summary>
+        public bool IsFlying => _flying;
         /// <summary>플레이어가 직접 조작 중이면 true. 이때는 랜덤 이동이 속도를 덮어쓰지 않는다.</summary>
         public bool InputOverride { get; set; }
         /// <summary>플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
@@ -69,6 +92,7 @@ namespace CoffeeSpec.Entities
             _originalScale = transform.localScale;
             _collider = GetComponent<Collider2D>();
             _originalId = _word;
+            _defaultGravity = _rigidbody.gravityScale;
             _manager = FindAnyObjectByType<RuleManager>();
             IsPlayer = GetComponent<PlatformerPlayer>() != null;
             if (_collider is BoxCollider2D box) RoundCorners(box, box.size);
@@ -213,10 +237,10 @@ namespace CoffeeSpec.Entities
             }
         }
 
-        // 태그가 바뀌면 CSV의 IsStatic에 맞춰 Static/Dynamic을 바꾼다
+        // 태그가 바뀌면 CSV의 IsStatic에 맞춰 Static/Dynamic을 바꾼다. 나는 중에는 Static 태그여도 Dynamic으로 둔다
         private void ApplyBodyType()
         {
-            var type = WordTags.IsStatic(_word) ? RigidbodyType2D.Static : RigidbodyType2D.Dynamic;
+            var type = WordTags.IsStatic(_word) && !_flying ? RigidbodyType2D.Static : RigidbodyType2D.Dynamic;
             if (_rigidbody.bodyType == type) return;
             _rigidbody.bodyType = type;
             // Static으로 굳는 순간 남아 있던 속도 때문에 튀지 않게 한다
@@ -247,8 +271,68 @@ namespace CoffeeSpec.Entities
             if (!on) _direction = Vector2.zero;
         }
 
-        // 문장을 다시 적용하기 전에 지속 효과(이동)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다
-        public void ResetState() => SetRandomMove(false);
+        /// <summary>
+        /// 난다: 중력을 끄고 발밑 바닥에서 랜덤 높이까지 떠올라 위아래로 둥실거린다. 끄면 중력이 돌아와 떨어진다.
+        /// Static 대상(벽, 출구)은 나는 동안만 Dynamic으로 풀고, 날기가 꺼지면 그 자리에서 다시 Static으로 고정된다.
+        /// </summary>
+        public void SetFly(bool on)
+        {
+            if (_flying == on) return;
+
+            _flying = on;
+            if (!on)
+            {
+                _rigidbody.gravityScale = _defaultGravity;
+                _rigidbody.freezeRotation = _freezeRotationBeforeFly;
+                _flyOffFrame = Time.frameCount;
+                ApplyBodyType();
+                return;
+            }
+
+            ApplyBodyType();
+            _freezeRotationBeforeFly = _rigidbody.freezeRotation;
+            _rigidbody.freezeRotation = true;
+            _rigidbody.gravityScale = 0f;
+            _wasGrounded = false;
+            // 문장을 다시 적용할 때는 같은 프레임에 껐다 켜진다. 이때는 높이를 새로 고르지 않고 하던 대로 둥실거린다
+            if (_flyOffFrame == Time.frameCount) return;
+
+            float height = Random.Range(Mathf.Min(_flyHeightRange.x, _flyHeightRange.y), Mathf.Max(_flyHeightRange.x, _flyHeightRange.y));
+            _flyBaseY = _rigidbody.position.y - DistanceToGround() + height;
+            _bobPhase = Random.Range(0f, Mathf.PI * 2f);
+            _flyTime = 0f;
+        }
+
+        // 발밑 바닥까지의 거리. 바닥이 없으면 0 (지금 위치를 바닥으로 본다)
+        private float DistanceToGround()
+        {
+            if (_collider == null) return 0f;
+            float best = float.MaxValue;
+            int count = _collider.Cast(Vector2.down, GroundHits, _flyGroundSearchDistance);
+            for (int i = 0; i < count; i++)
+            {
+                var hit = GroundHits[i];
+                if (hit.collider.isTrigger || hit.normal.y <= 0.5f) continue;
+                best = Mathf.Min(best, hit.distance);
+            }
+            return best == float.MaxValue ? 0f : best;
+        }
+
+        // 목표 높이(가운데 높이 + 사인 둥실거림)를 세로 속도로 따라간다. 속도로 움직여서 천장에 닿으면 막힌다
+        private void UpdateFly()
+        {
+            _flyTime += Time.fixedDeltaTime;
+            float targetY = _flyBaseY + Mathf.Sin(_flyTime * Mathf.PI * 2f / _bobPeriod + _bobPhase) * _bobAmplitude;
+            float vy = Mathf.Clamp((targetY - _rigidbody.position.y) * _flyFollowStrength, -_flyMaxSpeed, _flyMaxSpeed);
+            _rigidbody.linearVelocity = new Vector2(_rigidbody.linearVelocity.x, vy);
+        }
+
+        // 문장을 다시 적용하기 전에 지속 효과(이동, 날기)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다
+        public void ResetState()
+        {
+            SetRandomMove(false);
+            SetFly(false);
+        }
 
         // 닿은 상대를 RuleManager에 알리기만 한다. 무엇이 일어날지는 RuleManager가 태그를 보고 정한다
         private void OnTriggerEnter2D(Collider2D other) => ReportContact(other);
@@ -273,9 +357,10 @@ namespace CoffeeSpec.Entities
         private void FixedUpdate()
         {
             SnapToGround();
+            if (_flying) UpdateFly();
             if (!_randomMove) return;
-            // 중력을 받는 대상(플랫포머)은 위아래로 움직이면 물리와 싸우므로 좌우로만 움직인다
-            bool usesGravity = _rigidbody.gravityScale > 0f && _rigidbody.bodyType == RigidbodyType2D.Dynamic;
+            // 중력을 받는 대상(플랫포머)은 위아래로 움직이면 물리와 싸우므로 좌우로만 움직인다. 나는 중이면 높이는 날기가 정하므로 역시 좌우로만
+            bool usesGravity = (_rigidbody.gravityScale > 0f || _flying) && _rigidbody.bodyType == RigidbodyType2D.Dynamic;
             _timer -= Time.fixedDeltaTime;
             if (_timer <= 0f)
             {

@@ -10,6 +10,8 @@ namespace CoffeeSpec.Spec
     ///
     /// Lines (위에서부터 한 줄씩)
     ///   - 문장 틀 Id   : SentencesCSV.csv의 Id (예: NounIsNoun → "{0}은(는) {1}이다")
+    ///   - 문장 틀 Id, 단어 단어 : 쉼표 뒤에 빈칸 순서대로 처음 채워 둘 단어를 띄어 쓴다. 비워 둘 빈칸은 "_"
+    ///                       (예: "NounIsNoun, Person _" → 첫 빈칸에 Person, 둘째 빈칸은 빈칸). 쉼표가 없으면 모두 빈칸
     ///   - "//" 로 시작 : 주석 줄. 코드 에디터의 주석처럼 그대로 보여 준다 (예: "// Object & Role Definition")
     ///   - 빈 칸        : 빈 줄
     /// 단어 묶음: WordId 목록. 모든 빈칸이 같이 쓰며, 어떤 빈칸에든 어떤 단어든 넣을 수 있다.
@@ -19,6 +21,8 @@ namespace CoffeeSpec.Spec
     public class StageSpec : ScriptableObject
     {
         public const string CommentPrefix = "//";
+        public const char PresetSeparator = ',';
+        public const string EmptyPresetToken = "_";
 
         public enum LineKind
         {
@@ -35,19 +39,22 @@ namespace CoffeeSpec.Spec
             public string Comment { get; }
             /// <summary>문장 줄의 문장 틀. 주석·빈 줄이면 null.</summary>
             public SentenceTemplate Template { get; }
+            /// <summary>문장 줄에서 빈칸 순서대로 처음 채워 둘 단어. 비워 둘 빈칸은 빈 WordId. 적지 않았으면 빈 목록.</summary>
+            public IReadOnlyList<WordId> Preset { get; }
 
-            public Line(LineKind kind, string comment, SentenceTemplate template)
+            public Line(LineKind kind, string comment, SentenceTemplate template, IReadOnlyList<WordId> preset = null)
             {
                 Kind = kind;
                 Comment = comment;
                 Template = template;
+                Preset = preset ?? System.Array.Empty<WordId>();
             }
         }
 
         [Tooltip("문장 틀 CSV (Assets/_Project/Data/SentencesCSV.csv)")]
         [SerializeField] private TextAsset _sentenceCsv;
 
-        [Tooltip("기획서 줄. 위에서부터 순서대로 표시된다.\n- 문장 틀 Id (예: NounIsNoun)\n- // 로 시작하면 주석 줄\n- 비워 두면 빈 줄")]
+        [Tooltip("기획서 줄. 위에서부터 순서대로 표시된다.\n- 문장 틀 Id (예: NounIsNoun)\n- 문장 틀 Id, 처음 단어 (예: NounIsNoun, Person _ / _는 빈칸)\n- // 로 시작하면 주석 줄\n- 비워 두면 빈 줄")]
         [SerializeField] private List<string> _templateIds = new List<string>();
 
         [Tooltip("선택지 묶음. 같은 단어가 여러 번 필요하면 여러 개 넣는다")]
@@ -80,16 +87,42 @@ namespace CoffeeSpec.Spec
                 {
                     result.Add(new Line(LineKind.Comment, entry, null));
                 }
-                else if (templates.TryGetValue(entry, out SentenceTemplate template))
-                {
-                    result.Add(new Line(LineKind.Sentence, null, template));
-                }
                 else
                 {
-                    Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{entry}'는 건너뜁니다.", this);
+                    SplitSentenceEntry(entry, out string templateId, out List<WordId> preset);
+                    if (templates.TryGetValue(templateId, out SentenceTemplate template))
+                    {
+                        result.Add(new Line(LineKind.Sentence, null, template, preset));
+                    }
+                    else
+                    {
+                        Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{templateId}'는 건너뜁니다.", this);
+                    }
                 }
             }
             return result;
+        }
+
+        /// <summary>
+        /// "NounIsNoun, Person _" 를 문장 틀 Id와 처음 단어 목록으로 나눈다.
+        /// 쉼표가 없으면 단어 목록은 비어 있다 (모든 빈칸이 빈칸으로 시작). "_"는 빈 WordId.
+        /// </summary>
+        private static void SplitSentenceEntry(string entry, out string templateId, out List<WordId> preset)
+        {
+            preset = new List<WordId>();
+            int comma = entry.IndexOf(PresetSeparator);
+            if (comma < 0)
+            {
+                templateId = entry.Trim();
+                return;
+            }
+
+            templateId = entry.Substring(0, comma).Trim();
+            string[] tokens = entry.Substring(comma + 1).Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
+            foreach (string token in tokens)
+            {
+                preset.Add(token == EmptyPresetToken ? default : new WordId(token));
+            }
         }
 
 #if UNITY_EDITOR
@@ -103,6 +136,8 @@ namespace CoffeeSpec.Spec
 
             Dictionary<string, SentenceTemplate> templates = SentenceTemplate.ParseCsv(_sentenceCsv.text);
             int blankCount = 0;
+            // 처음 단어가 단어 묶음에서 몇 개씩 필요한지
+            var presetNeed = new Dictionary<WordId, int>();
             foreach (string raw in _templateIds)
             {
                 string entry = raw == null ? string.Empty : raw.Trim();
@@ -111,13 +146,36 @@ namespace CoffeeSpec.Spec
                     continue;
                 }
 
-                if (templates.TryGetValue(entry, out SentenceTemplate template))
+                SplitSentenceEntry(entry, out string templateId, out List<WordId> preset);
+                if (!templates.TryGetValue(templateId, out SentenceTemplate template))
                 {
-                    blankCount += template.Pattern.Count;
+                    Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{templateId}'", this);
+                    continue;
                 }
-                else
+                blankCount += template.Pattern.Count;
+
+                if (preset.Count > template.Pattern.Count)
                 {
-                    Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{entry}'", this);
+                    Debug.LogWarning($"[StageSpec] '{name}': '{entry}'의 처음 단어({preset.Count}개)가 빈칸({template.Pattern.Count}개)보다 많아서 남는 단어는 무시됩니다.", this);
+                }
+                for (int i = 0; i < preset.Count && i < template.Pattern.Count; i++)
+                {
+                    if (preset[i].IsEmpty) continue;
+                    presetNeed.TryGetValue(preset[i], out int need);
+                    presetNeed[preset[i]] = need + 1;
+                }
+            }
+
+            foreach (KeyValuePair<WordId, int> pair in presetNeed)
+            {
+                int have = 0;
+                foreach (WordId word in _wordPool)
+                {
+                    if (word == pair.Key) have++;
+                }
+                if (have < pair.Value)
+                {
+                    Debug.LogWarning($"[StageSpec] '{name}': 처음 단어 '{pair.Key}'가 {pair.Value}번 쓰였는데 단어 묶음에는 {have}개뿐이라 모자란 빈칸은 비어서 시작합니다.", this);
                 }
             }
 

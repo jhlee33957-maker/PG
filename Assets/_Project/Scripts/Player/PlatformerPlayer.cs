@@ -80,6 +80,8 @@ namespace CoffeeSpec.Player
         {
             var kb = Keyboard.current;
             if (kb == null) return;
+            // 기획서가 열려 있으면(시간 정지) 입력을 받지 않는다. 기획서를 보는 중에 공격·점프가 나가지 않도록
+            if (Time.timeScale == 0f) return;
 
             float x = 0f;
             if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) x += 1f;
@@ -106,7 +108,9 @@ namespace CoffeeSpec.Player
             float dt = Time.fixedDeltaTime;
             UpdateGrounded();
 
-            if (_grounded) { _coyoteTimer = _coyoteTime; _airDashAvailable = true; }
+            // 규칙으로 나는 중에는 땅에 닿지 않으므로 대쉬를 계속 쓸 수 있게 한다
+            if (_grounded || _ruleEntity.IsFlying) _airDashAvailable = true;
+            if (_grounded) _coyoteTimer = _coyoteTime;
             else _coyoteTimer -= dt;
 
             if (UpdateDash(dt)) return;
@@ -139,6 +143,14 @@ namespace CoffeeSpec.Player
 
         private void HandleJump()
         {
+            // 규칙으로 나는 중에는 높이를 RuleEntity가 정하므로 점프하지 않는다
+            if (_ruleEntity.IsFlying)
+            {
+                _jumpBufferTimer = 0f;
+                _jumpCutRequested = false;
+                return;
+            }
+
             var v = _rigidbody.linearVelocity;
             if (_jumpBufferTimer > 0f && _coyoteTimer > 0f)
             {
@@ -180,7 +192,8 @@ namespace CoffeeSpec.Player
             _dashTimer -= dt;
             if (_dashTimer <= 0f)
             {
-                _rigidbody.gravityScale = _defaultGravity;
+                // 나는 중이면 중력을 다시 켜지 않는다 (켜면 떨어진다)
+                _rigidbody.gravityScale = _ruleEntity.IsFlying ? 0f : _defaultGravity;
                 // 대쉬가 끝나면 이동 속도로 줄여서 미끄러지지 않게 한다
                 _rigidbody.linearVelocity = new Vector2(_facing * _moveSpeed, 0f);
             }
