@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
+using CoffeeSpec.Maps;
 using CoffeeSpec.Entities;
 using CoffeeSpec.UI;
 
@@ -47,6 +48,10 @@ namespace CoffeeSpec.Rules
         [SerializeField] private TextAsset _sentenceCsv;
         [Tooltip("현재 레벨에서 효력이 있는 문장. 실행 중에 바꿔도 즉시 반영된다")]
         [SerializeField] private List<SentenceSetup> _sentenceSetups = new();
+        [Tooltip("기획서 화면. 비워 두면 씬에서 찾는다. 빌드하면 문장을 적용하고, 리트하면 맵을 다시 깐다")]
+        [SerializeField] private SpecPanel _specPanel;
+        [Tooltip("리트할 때 Level을 다시 까는 로더. 비워 두면 씬에서 찾는다")]
+        [SerializeField] private MapLoader _mapLoader;
 
         private Dictionary<string, SentenceTemplate> _templates = new();
         private readonly List<Sentence> _sentences = new();
@@ -76,6 +81,59 @@ namespace CoffeeSpec.Rules
             Rebuild();
         }
 
+        private void OnEnable()
+        {
+            if (_specPanel == null) _specPanel = FindAnyObjectByType<SpecPanel>();
+            if (_specPanel == null) return;
+            _specPanel.Built += ApplySentences;
+            _specPanel.RetryRequested += Retry;
+        }
+
+        private void OnDisable()
+        {
+            if (_specPanel == null) return;
+            _specPanel.Built -= ApplySentences;
+            _specPanel.RetryRequested -= Retry;
+        }
+
+        /// <summary>
+        /// 실행 중에 문장 목록을 통째로 바꿔 적용한다. 기획서 화면의 빌드 결과가 여기로 들어온다.
+        /// 품사가 맞지 않는 문장은 경고만 남기고 건너뛴다.
+        /// </summary>
+        public void ApplySentences(IReadOnlyList<Sentence> sentences)
+        {
+            _sentences.Clear();
+            if (sentences != null)
+            {
+                foreach (var sentence in sentences)
+                {
+                    if (sentence == null) continue;
+                    if (!sentence.IsValid())
+                    {
+                        Debug.LogWarning($"[RuleManager] 품사 순서가 맞지 않는 문장: {sentence}");
+                        continue;
+                    }
+                    _sentences.Add(sentence);
+                }
+            }
+            ReapplyAll();
+        }
+
+        // 리트는 씬을 바꾸지 않고 Level 밑 프리팹만 맵 데이터대로 다시 깐다.
+        // 기획서 화면은 그대로라 고른 단어가 남고, 지금 문장을 새 객체에 다시 적용한다
+        private void Retry()
+        {
+            if (_mapLoader == null) _mapLoader = FindAnyObjectByType<MapLoader>();
+            if (_mapLoader == null)
+            {
+                Debug.LogError("[RuleManager] 씬에 MapLoader가 없어 리트할 수 없음");
+                return;
+            }
+            _cleared = false;
+            ClearScreen.Hide();
+            _mapLoader.Reload();
+            ReapplyAll();
+        }
         private void OnValidate()
         {
             // 편집 중에도 미리보기 문장을 갱신한다

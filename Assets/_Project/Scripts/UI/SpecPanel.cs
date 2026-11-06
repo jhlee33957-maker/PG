@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
@@ -69,6 +69,8 @@ namespace CoffeeSpec.UI
         [SerializeField] private Color _filledBlankColor = new Color(0.1f, 0.2f, 0.6f);
         [Tooltip("단어를 끌고 있을 때 놓을 수 있는 빈칸 위에 올라간 경우의 색")]
         [SerializeField] private Color _hoverBlankColor = new Color(0.85f, 0.4f, 0.1f);
+        [Tooltip("빈칸을 다 채웠는데 품사가 맞지 않는 문장의 색. 이런 문장이 있으면 빌드할 수 없다")]
+        [SerializeField] private Color _invalidSentenceColor = new Color(0.85f, 0.1f, 0.1f);
 
         [Header("시작")]
         [SerializeField] private bool _openOnStart = true;
@@ -506,7 +508,7 @@ namespace CoffeeSpec.UI
 
         private void OnClickBuild()
         {
-            if (!IsOpen || !AreAllBlanksFilled())
+            if (!IsOpen || !CanBuild())
             {
                 return;
             }
@@ -597,7 +599,7 @@ namespace CoffeeSpec.UI
         {
             RenderDocument();
             RefreshOptionButtons();
-            _btnBuild.interactable = AreAllBlanksFilled();
+            _btnBuild.interactable = CanBuild();
         }
 
         private void RefreshOptionButtons()
@@ -621,6 +623,13 @@ namespace CoffeeSpec.UI
                 string text = template.Text ?? string.Empty;
                 int cursor = 0;
 
+                // 품사가 맞지 않는 문장은 문장 전체를 붉게 보여준다. 단어를 빼면 원래 색으로 돌아온다
+                bool invalid = IsSentenceInvalid(s);
+                if (invalid)
+                {
+                    _textBuilder.Append("<color=#").Append(ColorUtility.ToHtmlStringRGBA(_invalidSentenceColor)).Append('>');
+                }
+
                 foreach (Match match in SlotPattern.Matches(text))
                 {
                     _textBuilder.Append(text, cursor, match.Index - cursor);
@@ -628,7 +637,7 @@ namespace CoffeeSpec.UI
                     int slot = int.Parse(match.Groups[1].Value);
                     if (slot < template.Pattern.Count)
                     {
-                        AppendBlank(_blankOffsets[s] + slot);
+                        AppendBlank(_blankOffsets[s] + slot, invalid);
                     }
                     else
                     {
@@ -638,6 +647,10 @@ namespace CoffeeSpec.UI
                     cursor = match.Index + match.Length;
                 }
                 _textBuilder.Append(text, cursor, text.Length - cursor);
+                if (invalid)
+                {
+                    _textBuilder.Append("</color>");
+                }
 
                 if (s < _templates.Count - 1)
                 {
@@ -648,7 +661,7 @@ namespace CoffeeSpec.UI
             _documentText.text = _textBuilder.ToString();
         }
 
-        private void AppendBlank(int blankIndex)
+        private void AppendBlank(int blankIndex, bool invalidSentence)
         {
             bool filled = _blankToOption[blankIndex] >= 0;
             string content = filled
@@ -657,6 +670,7 @@ namespace CoffeeSpec.UI
 
             Color color = blankIndex == _hoverBlank
                 ? _hoverBlankColor
+                : invalidSentence ? _invalidSentenceColor
                 : (filled ? _filledBlankColor : _emptyBlankColor);
 
             _textBuilder
@@ -678,6 +692,40 @@ namespace CoffeeSpec.UI
                 }
             }
             return true;
+        }
+
+        // 모든 빈칸이 차 있고, 품사가 맞지 않는 문장이 하나도 없어야 빌드할 수 있다
+        private bool CanBuild()
+        {
+            if (!AreAllBlanksFilled())
+            {
+                return false;
+            }
+            for (int s = 0; s < _templates.Count; s++)
+            {
+                if (IsSentenceInvalid(s))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /// <summary>문장의 빈칸이 모두 찼는데 품사 순서가 맞지 않으면 true. 덜 채운 문장은 아직 판단하지 않는다.</summary>
+        private bool IsSentenceInvalid(int sentenceIndex)
+        {
+            SentenceTemplate template = _templates[sentenceIndex];
+            var words = new List<WordId>(template.Pattern.Count);
+            for (int slot = 0; slot < template.Pattern.Count; slot++)
+            {
+                int option = _blankToOption[_blankOffsets[sentenceIndex] + slot];
+                if (option < 0)
+                {
+                    return false;
+                }
+                words.Add(_spec.WordPool[option]);
+            }
+            return !new Sentence(template, words).IsValid();
         }
 
         /// <summary>빈칸을 채운 단어로 문장(Sentence)을 만든다. 품사 검사는 규칙 쪽이 한다.</summary>

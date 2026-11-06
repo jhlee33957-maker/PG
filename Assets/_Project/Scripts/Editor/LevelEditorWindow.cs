@@ -537,7 +537,7 @@ namespace CoffeeSpec.EditorTools
     {
         static LevelEditorAutoOpen()
         {
-            EditorSceneManager.sceneOpened += (scene, _) => { ClearLevel(scene); TryOpen(scene); };
+            EditorSceneManager.sceneOpened += (scene, mode) => { ClearLevel(scene); TryOpen(scene); TryClose(scene, mode); };
             EditorSceneManager.sceneClosing += (scene, _) => ClearLevel(scene);
             // 에디터를 켰을 때 이미 EditorScene이 열려 있는 경우
             EditorApplication.delayCall += () => TryOpen(SceneManager.GetActiveScene());
@@ -562,6 +562,13 @@ namespace CoffeeSpec.EditorTools
                 LevelEditorWindow.ResetCurrentMap();
                 return;
             }
+        }
+
+        // EditorScene이 아닌 씬으로 바꿔 열면 레벨 에디터 창을 닫는다 (추가로 여는 씬은 무시)
+        private static void TryClose(Scene scene, OpenSceneMode mode)
+        {
+            if (mode != OpenSceneMode.Single || scene.path == LevelEditorWindow.EditorScenePath) return;
+            foreach (var w in Resources.FindObjectsOfTypeAll<LevelEditorWindow>()) w.Close();
         }
 
         private static void TryOpen(Scene scene)
