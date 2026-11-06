@@ -5598,6 +5598,14 @@ PrefabInstance:
       propertyPath: _prefabs.Array.size
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2109972919120206838, guid: 194722cfeca1db84787374cfdb0771d5, type: 3}
+      propertyPath: _sentenceSetups.Array.data[1].Preview
+      value: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
+      objectReference: {fileID: 0}
+    - target: {fileID: 2109972919120206838, guid: 194722cfeca1db84787374cfdb0771d5, type: 3}
+      propertyPath: _sentenceSetups.Array.data[1].TemplateId
+      value: NounIsNoun
+      objectReference: {fileID: 0}
     - target: {fileID: 4850396206242732975, guid: 194722cfeca1db84787374cfdb0771d5, type: 3}
       propertyPath: m_Name
       value: InGameScripts

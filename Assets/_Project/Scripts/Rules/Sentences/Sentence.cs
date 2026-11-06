@@ -16,25 +16,26 @@ namespace CoffeeSpec.Rules
             Words = words;
         }
 
-        // 빈칸 개수와 품사 순서가 CSV에 적힌 패턴과 같아야 성립한다
+        // 빈칸 개수가 같고, 단어마다 그 빈칸이 받는 품사 중 하나여야 성립한다
         public bool IsValid()
         {
             if (Template == null || Words.Count != Template.Pattern.Count) return false;
             for (int i = 0; i < Words.Count; i++)
-                if (!WordTags.Is(Words[i], Template.Pattern[i])) return false;
+                if (!Template.Accepts(i, Words[i])) return false;
             return true;
         }
 
-        /// <summary>플레이어에게 보일 문장. 예: 사람은(는) 비둘기이다</summary>
-        public string DisplayText
-        {
-            get
+        /// <summary>플레이어에게 보일 문장. 예: 사람은(는) 비둘기이다 / 사람은(는) 움직인다</summary>
+        public string DisplayText =>
+            SentenceTemplate.TokenPattern.Replace(Template.Text, m =>
             {
-                var args = new object[Words.Count];
-                for (int i = 0; i < Words.Count; i++) args[i] = WordTags.DisplayName(Words[i]);
-                return string.Format(Template.Text, args);
-            }
-        }
+                int slot = int.Parse(m.Groups[1].Value);
+                if (slot >= Words.Count) return m.Value;
+                // {n}은 단어, {n:품사=말}은 그 단어 품사에 맞는 끝말
+                return m.Groups[2].Success
+                    ? SentenceTemplate.ResolveEnding(m.Groups[2].Value, Words[slot])
+                    : WordTags.DisplayName(Words[slot]);
+            });
 
         public override string ToString() => $"{Template?.Id}({string.Join(", ", Words)})";
     }

@@ -36,7 +36,6 @@ namespace CoffeeSpec.UI
         private const string BlankLinkPrefix = "blank_";
 
         // 문장 틀의 빈칸 표기: {0}, {1} ...
-        private static readonly Regex SlotPattern = new Regex(@"\{(\d+)\}", RegexOptions.Compiled);
 
         [Header("데이터")]
         [SerializeField] private StageSpec _spec;
@@ -691,8 +690,8 @@ namespace CoffeeSpec.UI
 
         /// <summary>
         /// 빈칸에 단어를 넣는다.
-        /// - 빈칸에 있던 원래 단어는 단어 바로 돌아간다
-        /// - 다른 빈칸에서 끌어온 단어면 그 빈칸은 비워진다
+        /// - 단어 바에서 끌어오면 빈칸에 있던 원래 단어는 단어 바로 돌아간다
+        /// - 다른 빈칸에서 끌어오면 두 빈칸의 단어가 서로 자리를 바꾼다 (놓은 빈칸이 비어 있었으면 끌어온 빈칸은 비워진다)
         /// </summary>
         private void AssignOption(int blankIndex, int optionIndex)
         {
@@ -718,6 +717,14 @@ namespace CoffeeSpec.UI
             _blankToOption[blankIndex] = optionIndex;
             _optionToBlank[optionIndex] = blankIndex;
             StartTyping(blankIndex);
+
+            // 빈칸끼리 옮긴 경우: 놓은 빈칸에 있던 단어를 끌어온 빈칸으로 보내 자리를 맞바꾼다
+            if (otherBlank >= 0 && previousOption >= 0)
+            {
+                _blankToOption[otherBlank] = previousOption;
+                _optionToBlank[previousOption] = otherBlank;
+                StartTyping(otherBlank);
+            }
         }
 
         private void ClearBlank(int blankIndex)
@@ -910,12 +917,24 @@ namespace CoffeeSpec.UI
                 _textBuilder.Append("<color=#").Append(ColorUtility.ToHtmlStringRGBA(_invalidSentenceColor)).Append('>');
             }
 
-            foreach (Match match in SlotPattern.Matches(text))
+            foreach (Match match in SentenceTemplate.TokenPattern.Matches(text))
             {
                 _textBuilder.Append(text, cursor, match.Index - cursor);
 
                 int slot = int.Parse(match.Groups[1].Value);
-                if (slot < template.Pattern.Count)
+                if (match.Groups[2].Success)
+                {
+                    // 끝말: 빈칸 단어가 다 써진 뒤에 그 단어 품사에 맞는 말을 붙인다
+                    if (slot < template.Pattern.Count)
+                    {
+                        AppendEnding(_blankOffsets[sentenceIndex] + slot, match.Groups[2].Value);
+                    }
+                    else
+                    {
+                        _textBuilder.Append(match.Value);
+                    }
+                }
+                else if (slot < template.Pattern.Count)
                 {
                     int blankIndex = _blankOffsets[sentenceIndex] + slot;
                     hasHover |= blankIndex == _hoverBlank;
@@ -940,6 +959,16 @@ namespace CoffeeSpec.UI
                 _textBuilder.Append("</color>");
             }
             return hasHover;
+        }
+
+        private void AppendEnding(int blankIndex, string rule)
+        {
+            int option = _blankToOption[blankIndex];
+            if (option < 0 || _typedLength[blankIndex] < GetWordText(blankIndex).Length)
+            {
+                return;
+            }
+            _textBuilder.Append(SentenceTemplate.ResolveEnding(rule, _spec.WordPool[option]));
         }
 
         private void AppendBlank(int blankIndex, bool invalidSentence)

@@ -11,7 +11,6 @@ namespace CoffeeSpec.Entities
     [RequireComponent(typeof(SpriteRenderer), typeof(Rigidbody2D))]
     public class RuleEntity : MonoBehaviour, ISerializationCallbackReceiver
     {
-        private static readonly Vector2[] Directions = { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
         private static readonly Vector2[] SideDirections = { Vector2.left, Vector2.right };
 
         [SerializeField] private WordId _word;
@@ -52,6 +51,12 @@ namespace CoffeeSpec.Entities
         private SpriteDrawMode _originalDrawMode;
         private Vector2 _originalSize;
         private Vector3 _originalScale;
+        // 변신 대상에게 넘겨줄 배치 당시의 판정 설정 (출구는 통과되는 트리거, 비둘기는 막히는 몸 등)
+        private bool _originalIsTrigger;
+        private RigidbodyConstraints2D _originalConstraints;
+        private RigidbodyType2D _originalBodyType;
+        // 지금 모습의 바디 타입. 변신하면 새 모습 프리팹의 타입으로 바뀐다
+        private RigidbodyType2D _bodyType;
         private Collider2D _collider;
         private WordId _originalId;
         private bool _randomMove;
@@ -93,6 +98,10 @@ namespace CoffeeSpec.Entities
             _collider = GetComponent<Collider2D>();
             _originalId = _word;
             _defaultGravity = _rigidbody.gravityScale;
+            _originalIsTrigger = _collider != null && _collider.isTrigger;
+            _originalConstraints = _rigidbody.constraints;
+            _originalBodyType = _rigidbody.bodyType;
+            _bodyType = _originalBodyType;
             _manager = FindAnyObjectByType<RuleManager>();
             IsPlayer = GetComponent<PlatformerPlayer>() != null;
             if (_collider is BoxCollider2D box) RoundCorners(box, box.size);
@@ -209,6 +218,7 @@ namespace CoffeeSpec.Entities
         /// <summary>
         /// 다른 객체의 원래 모습으로 변신한다. 스프라이트만 바꾸면 그리는 크기가 그대로라 찌그러지므로
         /// 그리는 방식, 크기, 스케일까지 복사하고 콜라이더도 새 모습에 맞춘다.
+        /// 판정도 새 모습을 따라간다: 바디 타입(Static/Dynamic), 트리거 여부, 중력, 회전/이동 고정을 원래 그 객체의 설정으로 바꾼다.
         /// </summary>
         public void TransformInto(WordId id, RuleEntity source)
         {
@@ -226,6 +236,7 @@ namespace CoffeeSpec.Entities
                 source._originalScale.y, source._originalScale.z);
 
             FitColliderToSprite();
+            CopyPhysicsFrom(source);
             ApplyBodyType();
 
             if (_collider != null)
@@ -237,10 +248,28 @@ namespace CoffeeSpec.Entities
             }
         }
 
-        // 태그가 바뀌면 CSV의 IsStatic에 맞춰 Static/Dynamic을 바꾼다. 나는 중에는 Static 태그여도 Dynamic으로 둔다
+        private void CopyPhysicsFrom(RuleEntity source)
+        {
+            if (_collider != null) _collider.isTrigger = source._originalIsTrigger;
+            _bodyType = source._originalBodyType;
+            _defaultGravity = source._defaultGravity;
+            if (_flying)
+            {
+                // 나는 중에는 중력 0, 회전 고정을 유지하고 날기가 끝날 때 새 설정으로 돌아가게 한다
+                _freezeRotationBeforeFly = (source._originalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
+                _rigidbody.constraints = source._originalConstraints | RigidbodyConstraints2D.FreezeRotation;
+            }
+            else
+            {
+                _rigidbody.gravityScale = _defaultGravity;
+                _rigidbody.constraints = source._originalConstraints;
+            }
+        }
+
+        // 지금 모습의 바디 타입(프리팹 기준)을 적용한다. 나는 중에는 Static 모습이어도 Dynamic으로 둔다
         private void ApplyBodyType()
         {
-            var type = WordTags.IsStatic(_word) && !_flying ? RigidbodyType2D.Static : RigidbodyType2D.Dynamic;
+            var type = _flying ? RigidbodyType2D.Dynamic : _bodyType;
             if (_rigidbody.bodyType == type) return;
             _rigidbody.bodyType = type;
             // Static으로 굳는 순간 남아 있던 속도 때문에 튀지 않게 한다
@@ -359,13 +388,12 @@ namespace CoffeeSpec.Entities
             SnapToGround();
             if (_flying) UpdateFly();
             if (!_randomMove) return;
-            // 중력을 받는 대상(플랫포머)은 위아래로 움직이면 물리와 싸우므로 좌우로만 움직인다. 나는 중이면 높이는 날기가 정하므로 역시 좌우로만
+            // Move는 항상 좌우로만 움직인다. 중력을 받는 대상(나는 중 포함)은 속도로, 아닌 대상은 위치로 옮긴다
             bool usesGravity = (_rigidbody.gravityScale > 0f || _flying) && _rigidbody.bodyType == RigidbodyType2D.Dynamic;
             _timer -= Time.fixedDeltaTime;
             if (_timer <= 0f)
             {
-                var dirs = usesGravity ? SideDirections : Directions;
-                _direction = dirs[Random.Range(0, dirs.Length)];
+                _direction = SideDirections[Random.Range(0, SideDirections.Length)];
                 _timer = _directionInterval;
             }
 

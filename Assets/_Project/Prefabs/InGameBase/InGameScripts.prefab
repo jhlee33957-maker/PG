@@ -44,8 +44,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e42bf00c1464beb40bd75296801bb54c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Maps.MapLoader
-  _mapJson: {fileID: 0}
-  _prefabs: []
 --- !u!1 &834738140671045504
 GameObject:
   m_ObjectHideFlags: 0
@@ -99,12 +97,12 @@ MonoBehaviour:
     - _value: Person
     Words: 
     Preview: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
-  - TemplateId: NounVerb
+  - TemplateId: NounIsNoun
     WordIds:
     - _value: Person
     - _value: Person
     Words: 
-    Preview: "(\uD488\uC0AC \uC21C\uC11C\uAC00 \uB9DE\uC9C0 \uC54A\uC74C)"
+    Preview: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
   _specPanel: {fileID: 0}
   _mapLoader: {fileID: 0}
 --- !u!1 &4850396206242732975

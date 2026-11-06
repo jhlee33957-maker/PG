@@ -46,7 +46,7 @@ namespace CoffeeSpec.Rules
     }
 
     /// <summary>
-    /// Data/WordsCSV.csv (Id,DisplayName,Type,IsStatic)에서 읽은 단어 조회표.
+    /// Data/WordsCSV.csv (Id,DisplayName,Type)에서 읽은 단어 조회표.
     /// 실행 중에는 RuleManager가 Initialize로 CSV를 넘겨주고, 에디터에서는 경로로 직접 읽는다.
     /// </summary>
     public static class WordTags
@@ -68,8 +68,6 @@ namespace CoffeeSpec.Rules
             public WordId Id;
             public string DisplayName;
             public WordType Type;
-            // 이 태그가 되면 Rigidbody2D를 Static으로 둔다 (벽처럼 밀리지 않게)
-            public bool IsStatic;
         }
 
         private static Dictionary<WordId, Entry> _entries;
@@ -90,13 +88,6 @@ namespace CoffeeSpec.Rules
         {
             EnsureLoaded();
             return _entries.TryGetValue(id, out var e) && e.Type == type;
-        }
-
-        /// <summary>이 태그의 객체가 Static 바디여야 하는지. CSV에 없거나 칸이 비면 false(Dynamic).</summary>
-        public static bool IsStatic(WordId id)
-        {
-            EnsureLoaded();
-            return _entries.TryGetValue(id, out var e) && e.IsStatic;
         }
 
         // 플레이어에게 보일 단어. 문장 틀의 빈칸에 들어간다
@@ -143,9 +134,7 @@ namespace CoffeeSpec.Rules
                     Debug.LogWarning($"[WordTags] {i + 1}번째 줄 품사를 알 수 없음: {cols[2]}");
                     continue;
                 }
-                var entry = new Entry { Id = new WordId(cols[0]), DisplayName = cols[1].Trim(), Type = type,
-                    // IsStatic 칸은 예전 CSV와 호환되게 없어도 된다
-                    IsStatic = cols.Length > 3 && bool.TryParse(cols[3].Trim(), out var isStatic) && isStatic };
+                var entry = new Entry { Id = new WordId(cols[0]), DisplayName = cols[1].Trim(), Type = type };
                 if (entry.Id.IsEmpty || _entries.ContainsKey(entry.Id))
                 {
                     Debug.LogWarning($"[WordTags] 비었거나 중복된 Id: {cols[0]}");

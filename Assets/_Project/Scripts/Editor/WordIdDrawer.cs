@@ -1,5 +1,6 @@
 ﻿#if UNITY_EDITOR
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using CoffeeSpec.Rules;
@@ -17,8 +18,8 @@ namespace CoffeeSpec.EditorTools
             Draw(position, property, label, null);
         }
 
-        /// <param name="filter">null이 아니면 이 품사의 단어만 보여준다 (문장 빈칸용)</param>
-        public static void Draw(Rect position, SerializedProperty property, GUIContent label, WordType? filter)
+        /// <param name="filter">null이 아니면 이 품사들 중 하나인 단어만 보여준다 (문장 빈칸용)</param>
+        public static void Draw(Rect position, SerializedProperty property, GUIContent label, IReadOnlyList<WordType> filter)
         {
             var valueProp = property.FindPropertyRelative("_value");
             EditorGUI.BeginProperty(position, label, property);
@@ -27,7 +28,7 @@ namespace CoffeeSpec.EditorTools
             var names = new List<string>();
             foreach (var e in WordTags.All)
             {
-                if (filter.HasValue && e.Type != filter.Value) continue;
+                if (filter != null && !filter.Contains(e.Type)) continue;
                 ids.Add(e.Id.Value);
                 names.Add($"{e.Id.Value} ({e.DisplayName})");
             }
