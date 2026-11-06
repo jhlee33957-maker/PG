@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -125,15 +125,37 @@ namespace CoffeeSpec.UI
         [SerializeField] private Image _mugImage;
 
         [Header("1) 모니터 켜짐 (초)")]
-        [SerializeField, Min(0f)] private float _darkHold = 0.2f;
-        [SerializeField, Min(0.01f)] private float _monitorOnDuration = 0.8f;
+        [SerializeField, Min(0f)] private float _darkHold = 0.3f;
+        [SerializeField, Min(0.01f)] private float _monitorOnDuration = 1.2f;
         [Tooltip("가로: 0~1 진행, 세로: 모니터 밝기. 들쭉날쭉하면 깜빡임")]
         [SerializeField] private AnimationCurve _monitorFlicker = new AnimationCurve(
             new Keyframe(0f, 0f), new Keyframe(0.12f, 0.9f), new Keyframe(0.2f, 0.05f),
             new Keyframe(0.35f, 0.8f), new Keyframe(0.45f, 0.25f), new Keyframe(0.65f, 1f), new Keyframe(1f, 1f));
         [Tooltip("모니터가 다 켜졌을 때 남는 검은 막 알파 (0 = 다 드러남)")]
         [SerializeField, Range(0f, 1f)] private float _darkOverlayEnd = 0.15f;
-        [SerializeField, Range(0f, 1f)] private float _glowMaxAlpha = 0.35f;
+        [Tooltip("모니터 빛(부드러운 원형 그라데이션)의 최대 세기")]
+        [SerializeField, Range(0f, 1f)] private float _glowMaxAlpha = 0.3f;
+        [Header("모니터 화면 빛 (화면 가운데에서 퍼짐)")]
+        [Tooltip("화면 위에 겹쳐 그리는 부드러운 빛. 비우면 효과 없음")]
+        [SerializeField] private Image _screenBloom;
+        [Tooltip("빛 가운데 진하기 (0 = 끔)")]
+        [SerializeField, Range(0f, 1f)] private float _bloomStrength = 0.22f;
+        [Tooltip("빛 크기 = 화면 크기 x 이 값. 1 보다 크면 베젤 밖 방까지 번짐")]
+        [SerializeField, Range(1f, 4f)] private float _bloomSize = 2.2f;
+        [SerializeField] private Color _bloomColor = new Color32(0xA9, 0xC6, 0xF5, 0xFF);
+        [Tooltip("모니터 줌인 구간(0~1) 중 빛이 줄어들기 시작하는 지점")]
+        [SerializeField, Range(0f, 1f)] private float _bloomFadeStart = 0.1f;
+        [Tooltip("모니터 줌인 구간(0~1) 중 빛이 다 사라지는 지점. 최종 타이틀 화면에는 빛이 없음")]
+        [SerializeField, Range(0f, 1f)] private float _bloomFadeEnd = 0.75f;
+
+        [Tooltip("모니터 주변을 뺀 방을 어둡게 하는 막 (가운데가 뚫린 검은 이미지)")]
+        [SerializeField] private Image _roomDim;
+        [Tooltip("깜빡임 횟수. 0 이면 아래 Monitor Flicker 커브를 그대로 씀")]
+        [SerializeField, Min(0)] private int _flickerCount = 3;
+        [Tooltip("깜빡일 때 모니터가 꺼지는 정도 (0 = 완전히 꺼짐)")]
+        [SerializeField, Range(0f, 1f)] private float _flickerLow = 0.15f;
+        [Tooltip("모니터가 꺼질 때 방이 함께 어두워지는 정도 (모니터 주변 제외)")]
+        [SerializeField, Range(0f, 1f)] private float _flickerRoomDim = 0.45f;
         [SerializeField] private Shot _wideShot = new Shot(new Vector2(0.5f, 0.5f), 1f);
 
         [Header("2) 기획서 클로즈업 (초)")]
@@ -176,6 +198,7 @@ namespace CoffeeSpec.UI
         private void Awake()
         {
             ApplySprites();
+            EnsureBloomSprite();
         }
 
         private void Start()
@@ -207,6 +230,7 @@ namespace CoffeeSpec.UI
             if (_playing)
             {
                 UpdateViewport();
+                FollowBloom();
             }
         }
 
@@ -241,6 +265,8 @@ namespace CoffeeSpec.UI
             SetActive(_closeupGroup, false);
             SetDark(1f);
             SetGlow(0f);
+            SetBloom(0f);
+            SetRoomDim(0f);
             SetAlpha(_screenGroup, 0f);
             ApplyShot(_wideShot.Focus, _wideShot.Zoom);
             ResetCloseup();
@@ -253,14 +279,19 @@ namespace CoffeeSpec.UI
             }
             yield return Tween(_monitorOnDuration, k =>
             {
-                float b = Mathf.Clamp01(_monitorFlicker.Evaluate(k));
+                float b = Flicker(k);
                 SetAlpha(_screenGroup, b);
                 SetGlow(b * _glowMaxAlpha);
-                SetDark(Mathf.Lerp(1f, _darkOverlayEnd, b));
+                SetBloom(b);
+                // 전체 어둠은 첫 번째 켜짐 동안 한 번만 걷히고, 그 뒤 깜빡임은 모니터 주변을 뺀 방만 어둡게 한다
+                SetDark(Mathf.Lerp(1f, _darkOverlayEnd, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(k / FirstFlashEnd()))));
+                SetRoomDim(_flickerRoomDim * (1f - b));
             });
             SetAlpha(_screenGroup, 1f);
             SetGlow(_glowMaxAlpha);
+            SetBloom(1f);
             SetDark(_darkOverlayEnd);
+            SetRoomDim(0f);
 
             // 2) 기획서 클로즈업
             SetActive(_closeupGroup, true);
@@ -296,6 +327,8 @@ namespace CoffeeSpec.UI
                 float x = Mathf.Clamp01((k - expandStart) / Mathf.Max(0.0001f, _screenExpandPortion));
                 _viewportToFull = x * x * (3f - 2f * x);
                 SetAlpha(_worldGroup, 1f - _viewportToFull);
+                float f = Mathf.Clamp01((k - _bloomFadeStart) / Mathf.Max(0.0001f, _bloomFadeEnd - _bloomFadeStart));
+                SetBloom(1f - f * f * (3f - 2f * f));
                 SetDark(Mathf.Lerp(_darkOverlayEnd, 0f, _viewportToFull));
             });
 
@@ -417,6 +450,9 @@ namespace CoffeeSpec.UI
                 _darkOverlay.gameObject.SetActive(false);
             }
             SetAlpha(_screenGroup, 1f);
+            SetGlow(_glowMaxAlpha);
+            SetRoomDim(0f);
+            SetBloom(0f);
             UpdateViewport();
             if (_screen != null)
             {
@@ -588,6 +624,125 @@ namespace CoffeeSpec.UI
             Color c = _darkOverlay.color;
             c.a = alpha;
             _darkOverlay.color = c;
+        }
+
+        /// <summary>모니터 밝기 0~1. 깜빡임 횟수가 0 이면 커브, 아니면 켜짐/꺼짐을 번갈아 만든 뒤 마지막 35% 는 계속 켜짐.</summary>
+        private float Flicker(float k)
+        {
+            if (_flickerCount <= 0)
+            {
+                return Mathf.Clamp01(_monitorFlicker.Evaluate(k));
+            }
+            const float flickerPart = 0.65f;
+            if (k >= flickerPart)
+            {
+                return 1f;
+            }
+            float phase = k / flickerPart * _flickerCount;
+            int i = Mathf.Min(_flickerCount - 1, Mathf.FloorToInt(phase));
+            float frac = phase - i;
+            float on = Mathf.Lerp(0.7f, 1f, (i + 1f) / _flickerCount);
+            // 한 번의 깜빡임 = 짧게 켜짐(60%) → 꺼짐(40%). 경계는 아주 짧게 부드럽게
+            float edgeIn = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(frac / 0.08f));
+            float edgeOut = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((frac - 0.6f) / 0.06f));
+            float low = i == 0 ? 0f : _flickerLow;
+            if (i == _flickerCount - 1)
+            {
+                return Mathf.Lerp(low, 1f, edgeIn); // 마지막은 꺼지지 않고 그대로 켜짐
+            }
+            float b = Mathf.Lerp(low, on, edgeIn);
+            return Mathf.Lerp(b, _flickerLow, edgeOut);
+        }
+
+        private float FirstFlashEnd()
+        {
+            return _flickerCount <= 0 ? 0.12f : Mathf.Max(0.01f, 0.65f / _flickerCount * 0.6f);
+        }
+
+        private static Sprite s_bloomSprite;
+
+        /// <summary>가운데 1 → 가장자리 0 으로 부드럽게 줄어드는 원형 빛 (코드로 만듦, Bilinear, 계단 없음).</summary>
+        private void EnsureBloomSprite()
+        {
+            if (_screenBloom == null)
+            {
+                return;
+            }
+            _screenBloom.raycastTarget = false;
+            if (_screenBloom.sprite != null)
+            {
+                return;
+            }
+            if (s_bloomSprite == null)
+            {
+                const int size = 256;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                {
+                    filterMode = FilterMode.Bilinear,
+                    wrapMode = TextureWrapMode.Clamp,
+                    name = "TitleScreenBloom",
+                    hideFlags = HideFlags.DontSave,
+                };
+                float half = (size - 1) * 0.5f;
+                var pixels = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                {
+                    for (int x = 0; x < size; x++)
+                    {
+                        float dx = (x - half) / half;
+                        float dy = (y - half) / half;
+                        float r = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy));
+                        // 가운데는 넓고 평평하게, 끝은 0 으로 매끄럽게
+                        float a = Mathf.Exp(-r * r * 3.2f) * (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.6f, 1f, r)));
+                        pixels[y * size + x] = new Color32(255, 255, 255, (byte)Mathf.RoundToInt(a * 255f));
+                    }
+                }
+                tex.SetPixels32(pixels);
+                tex.Apply();
+                s_bloomSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+                s_bloomSprite.hideFlags = HideFlags.DontSave;
+            }
+            _screenBloom.sprite = s_bloomSprite;
+        }
+
+        /// <summary>화면 빛 세기 (0~1, Bloom Strength 를 곱함). 위치와 크기는 화면 창을 따라간다.</summary>
+        private void SetBloom(float k)
+        {
+            if (_screenBloom == null)
+            {
+                return;
+            }
+            float a = Mathf.Clamp01(k) * _bloomStrength;
+            Color c = _bloomColor;
+            c.a = a;
+            _screenBloom.color = c;
+            _screenBloom.enabled = a > 0.001f;
+            FollowBloom();
+        }
+
+        /// <summary>빛을 화면 창 가운데에 맞춘다. 화면 창이 움직인 뒤(LateUpdate)에도 부른다.</summary>
+        private void FollowBloom()
+        {
+            if (_screenBloom != null && _screenBloom.enabled && _screenViewport != null)
+            {
+                RectTransform rt = _screenBloom.rectTransform;
+                rt.anchorMin = rt.anchorMax = _screenViewport.anchorMin;
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.anchoredPosition = _screenViewport.anchoredPosition;
+                rt.sizeDelta = _screenViewport.sizeDelta * _bloomSize;
+            }
+        }
+
+        private void SetRoomDim(float alpha)
+        {
+            if (_roomDim == null)
+            {
+                return;
+            }
+            Color c = _roomDim.color;
+            c.a = alpha;
+            _roomDim.color = c;
+            _roomDim.enabled = alpha > 0.001f;
         }
 
         private void SetGlow(float alpha)

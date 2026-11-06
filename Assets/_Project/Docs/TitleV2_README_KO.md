@@ -1,4 +1,4 @@
-# 커피스펙 타이틀 연출 v2 (야근 방 → 모니터 → 타이틀 화면)
+﻿# 커피스펙 타이틀 연출 v2 (야근 방 → 모니터 → 타이틀 화면)
 
 ## 1. 들어 있는 파일
 
@@ -20,22 +20,22 @@
 |---|---|---|---|
 | `title_room.png` | 3840x2160 (8배) | 불투명 | 방 벽, 블라인드 틈의 아주 약한 밤빛, 선반 실루엣. 거의 검정 #0B0E14 |
 | `title_desk.png` | 3840x2160 (8배) | 마젠타 | 살짝 앞에서 본 책상. 왼쪽 기획서·커피잔, 오른쪽 모니터·키보드·에너지드링크 캔·포스트잇. 모니터 화면은 마젠타로 비움 |
-| `title_monitor_glow.png` | 3840x2160 (8배) | 마젠타 | 모니터 → 책상 쪽 파란 빛 번짐 (#5A8BD6 디더링 점) |
-| `title_monitor_glow_soft.png` | 3840x2160 | 이미 투명 | 같은 빛 번짐을 계단형 반투명(알파)으로 만든 대안 |
+| `title_monitor_glow.png` | 1920x1080 | 이미 투명 | 모니터 주변의 부드러운 파란 빛 (#5A8BD6, 코드로 만든 원형 그라데이션, 점 없음) |
+| `title_monitor_glow_soft.png` | 3840x2160 | 이미 투명 | (이제 쓰지 않음) 예전 계단형 빛 번짐 |
 | `title_doc_closeup.png` | 1920x1080 (4배) | 불투명 | 얼룩진 기획서 한 장 (문장·얼룩 포함, 아래 2번) |
 | `title_mug.png` (지금 씬에서는 안 씀) | 256x256 (4배) | 마젠타 | 흰 머그잔, 바닥에 커피 조금 |
 | `title_drop_01~04.png` (안 씀) | 128x128 (4배) | 마젠타 | 커피 방울 #6B4226, 가장자리 1픽셀 더 진하게 |
 | `title_drop_mark_01~04.png` (안 씀) | 128x128 (4배) | 마젠타 | 커피 방울 자국 |
-| `title_fx_scanline.png`, `title_fx_screen_glow.png` | | | 씬 빌더가 처음 실행할 때 만드는 효과 텍스처 |
+| `title_fx_scanline.png`, `title_fx_vignette.png` | | | 씬 빌더가 처음 실행할 때 만드는 효과 텍스처 (`title_fx_screen_glow.png`는 이제 쓰지 않음) |
 
-빛 번짐을 두 가지로 둔 이유: 마젠타를 투명으로 바꾸면 알파가 0 아니면 1이라 "반투명"을 그릴 수 없습니다.
-- 기본 `title_monitor_glow.png`: 파란 점을 디더링 패턴(점 밀도)으로 찍어 반투명처럼 보이게 했습니다. Image 알파(연출의 `Glow Max Alpha`)로 한 번 더 옅게 합니다. 도트 화풍과 잘 맞습니다.
-- 대안 `title_monitor_glow_soft.png`: 알파 4단계짜리 PNG. 디더링 점이 거슬리면 Director 의 `Glow Sprite` 에 이것을 넣고 `Glow Max Alpha` 를 0.8~1 정도로 올리세요.
+빛 번짐: 예전의 디더링 점 방식을 없애고, 알파가 부드럽게 줄어드는 PNG(`title_monitor_glow.png`)로 바꿨습니다. 깜빡일 때 모니터 주변을 뺀 방이 함께 어두워지도록 `title_room_dim.png`(가운데가 뚫린 검은 막, 1920x1080)를 추가했습니다.
+- 진하기는 Director 의 `Glow Max Alpha`(기본 0.3), 방이 어두워지는 정도는 `Flicker Room Dim`(기본 0.45)으로 조절합니다.
+- 두 이미지는 마젠타가 없으므로 변환할 필요가 없습니다.
 
 ## 2. 문구
 
 ### 기획서 클로즈업 (이미지에 직접 그려 둔 문장)
-`title_doc_closeup.png` 한 장에 문장과 얼룩이 같이 그려져 있습니다. 연출 중에 바뀌는 것은 없습니다 (TMP 문장, 커피잔, 방울, 자국 없음).
+`title_doc_closeup.png` 한 장에 맨 위 제목 "기획서"와 문장, 얼룩이 같이 그려져 있습니다. 연출 중에 바뀌는 것은 없습니다 (TMP 문장, 커피잔, 방울, 자국 없음).
 ```
 1. 게임 개요
   - 장르: 2D 퍼즐 플랫포머
@@ -80,11 +80,19 @@
 |---|---|---|---|
 | 재생 조건 | Play Intro | 켬 | 끄면 항상 최종 화면 |
 | | Always Play In Editor | 끔 | 켜면 에디터에서 Title 에 들어올 때마다 재생 (테스트용) |
-| 1) 모니터 켜짐 (1.0초) | Dark Hold | 0.2 | 완전한 어둠 유지 |
-| | Monitor On Duration | 0.8 | 깜빡이며 켜지는 시간 |
+| 1) 모니터 켜짐 (1.5초) | Dark Hold | 0.3 | 완전한 어둠 유지 (예전 0.2의 1.5배) |
+| | Monitor On Duration | 1.2 | 깜빡이며 켜지는 시간 (예전 0.8의 1.5배). 깜빡임 간격도 함께 1.5배로 늘어남 |
 | | Monitor Flicker | 곡선 | 가로 0~1 진행, 세로 밝기. 들쭉날쭉할수록 깜빡임 |
 | | Dark Overlay End | 0.15 | 다 켜진 뒤 남는 어둠. 후보 0.1(방이 더 보임) ~ 0.3(더 어둡게) |
-| | Glow Max Alpha | 0.35 | 빛 번짐 진하기. 디더링 이미지는 0.3~0.45, soft 이미지는 0.8~1 |
+| | Glow Max Alpha | 0.3 | 모니터 빛 세기. 후보 0.2(은은하게) ~ 0.45(강하게) |
+| | Room Dim | L3_RoomDim | 모니터 주변만 뚫린 검은 막 (빌더가 연결) |
+| | Flicker Count | 3 | 깜빡임 횟수. 0 이면 Monitor Flicker 곡선을 그대로 씀. 후보 2 ~ 4 |
+| | Flicker Low | 0.15 | 깜빡일 때 모니터가 꺼지는 정도 (0 = 완전히 꺼짐) |
+| | Flicker Room Dim | 0.45 | 모니터가 꺼질 때 방(모니터 주변 제외)이 어두워지는 정도. 후보 0.3 ~ 0.6 |
+| | Bloom Strength | 0.22 | 모니터 화면 가운데에서 퍼지는 빛(ScreenBloom) 진하기. 후보 0.15 ~ 0.3. 0 = 끔 |
+| | Bloom Size | 2.2 | 빛 크기 = 모니터 화면 x 이 값. 후보 1.6(화면 근처만) ~ 3(방까지 넓게) |
+| | Bloom Color | #A9C6F5 | 화면 빛 색 |
+| | Bloom Fade Start / End | 0.1 / 0.75 | 4) 모니터 줌인 구간(0~1) 중 화면 빛이 줄기 시작/다 사라지는 지점. 최종 타이틀 화면·건너뛰기·재진입 때는 빛 없음 |
 | | Wide Shot | (0.5, 0.5), 1 | 1)에서 보이는 전체 방 |
 | 2) 기획서 (약 3초) | Closeup Fade In | 0.25 | |
 | | Closeup Hold | 2.0 | 얼룩진 기획서를 보여 주는 시간. 후보 1.5(빠르게) ~ 2.5(천천히 읽게) |
@@ -115,7 +123,7 @@
 | Menu Group | Menu | 연출 중 잠금 |
 | Scanline Intensity | 0.06 | 후보 0.04(거의 안 보임) ~ 0.1. 0.15 넘으면 글자가 흐려짐 |
 | Scanline Period | 4 | 줄 간격(캔버스 단위). 4 = 도트 1칸 |
-| Glow Intensity / Color | 0.10 / #5A8BD6 | 화면 가운데 빛 번짐. 후보 0.06 ~ 0.15 |
+| Glow Intensity / Color | 0.25 / 검정 | 화면 가장자리 비네트 (가운데 타원 없음, 부드러운 그라데이션). 0 = 끔. 후보 0.15 ~ 0.35 |
 | Audio Source | TitleCanvas | |
 | Sfx Monitor On / Coffee Drop / Keyboard / Menu Execute | 비어 있음 | 비어 있어도 동작. Coffee Drop 은 지금 쓰이지 않음. Keyboard 는 이동 시작과 메뉴 커서 이동 때 재생 |
 | Sfx Volume | 0.8 | |
@@ -133,8 +141,8 @@
 
 ## 4. Unity 에서 확인하는 순서
 1. Unity 를 열고 컴파일 에러가 없는지 Console 확인.
-2. Project 창에서 `Sprite/Title` 의 마젠타 이미지(`title_desk`, `title_monitor_glow`, `title_mug`, `title_drop_*`, `title_drop_mark_*`)를 선택 → 메뉴 `CoffeeSpec > Title > 선택한 이미지 마젠타 → 투명 PNG`. (원본을 덮어씁니다. 마젠타 원본이 필요하면 먼저 복사해 두세요.)
-   - 나머지(room, closeup, glow_soft)는 마젠타가 없어 그대로 두면 됩니다. 아래 3번이 임포트 설정(Sprite, Point, 압축 없음, 최대 4096)을 전부 맞춥니다.
+2. Project 창에서 `Sprite/Title` 의 마젠타 이미지(`title_desk`, `title_mug`, `title_drop_*`, `title_drop_mark_*`)를 선택 → 메뉴 `CoffeeSpec > Title > 선택한 이미지 마젠타 → 투명 PNG`. (원본을 덮어씁니다. 마젠타 원본이 필요하면 먼저 복사해 두세요.)
+   - 나머지(room, closeup, monitor_glow, room_dim)는 마젠타가 없어 그대로 두면 됩니다. 아래 3번이 임포트 설정(Sprite, Point, 압축 없음, 최대 4096)을 전부 맞춥니다.
 3. 메뉴 `CoffeeSpec > Title > 타이틀 씬 자동 생성`. 마젠타가 남은 이미지가 있으면 바꿀지 묻습니다.
    - Title 씬이 열리고 `[TitleV2]` 가 만들어진 뒤 저장됩니다.
    - 기존 Title 오브젝트(TitleUI 가 있던 것)와 옛 EventSystem 은 지우지 않고 `(old)` 를 붙여 꺼 둡니다. 확인 후 직접 지우면 됩니다.

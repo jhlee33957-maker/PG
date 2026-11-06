@@ -1,4 +1,4 @@
-using TMPro;
+﻿using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -43,9 +43,9 @@ namespace CoffeeSpec.UI
         [Tooltip("스캔라인 한 줄 간격 (캔버스 단위, 1920x1080 기준)")]
         [SerializeField, Min(2)] private int _scanlinePeriod = 4;
         [SerializeField] private RawImage _glow;
-        [Tooltip("모니터 빛 번짐 진하기. 0 = 끔")]
-        [SerializeField, Range(0f, 0.5f)] private float _glowIntensity = 0.10f;
-        [SerializeField] private Color _glowColor = new Color32(0x5A, 0x8B, 0xD6, 0xFF);
+        [Tooltip("화면 가장자리 비네트(부드럽게 어두워짐) 진하기. 0 = 끔. 가운데 타원은 없음")]
+        [SerializeField, Range(0f, 1f)] private float _glowIntensity = 0.25f;
+        [SerializeField] private Color _glowColor = new Color(0f, 0f, 0f, 1f);
 
         [Header("효과음 (비어 있어도 동작)")]
         [SerializeField] private AudioSource _audioSource;
@@ -189,14 +189,14 @@ namespace CoffeeSpec.UI
             return tex;
         }
 
-        /// <summary>가운데가 밝고 가장자리로 갈수록 투명해지는 계단형(4단계) 빛 번짐.</summary>
+        /// <summary>가운데는 투명하고 가장자리로 갈수록 부드럽게 진해지는 비네트 (계단 없음, Bilinear).</summary>
         public static Texture2D CreateGlowTexture(int size)
         {
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
             {
-                filterMode = FilterMode.Point,
+                filterMode = FilterMode.Bilinear,
                 wrapMode = TextureWrapMode.Clamp,
-                name = "TitleScreenGlow",
+                name = "TitleScreenVignette",
             };
             float half = (size - 1) * 0.5f;
             for (int y = 0; y < size; y++)
@@ -205,8 +205,8 @@ namespace CoffeeSpec.UI
                 {
                     float dx = (x - half) / half;
                     float dy = (y - half) / half;
-                    float d = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy));
-                    float a = Mathf.Floor((1f - d) * 4f) / 4f; // 도트 느낌으로 계단 4단계
+                    float d = Mathf.Sqrt(dx * dx + dy * dy) / 1.4142f; // 모서리 = 1
+                    float a = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.45f, 1f, d));
                     tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
                 }
             }

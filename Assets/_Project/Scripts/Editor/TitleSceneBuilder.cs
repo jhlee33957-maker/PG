@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using TMPro;
 using UnityEditor;
@@ -115,6 +115,10 @@ namespace CoffeeSpec.UI
             Sprite glowSprite = LoadSprite("title_monitor_glow.png");
             Image glow = NewImage("L2_MonitorGlow", world, glowSprite, new Color(1f, 1f, 1f, 0f));
             Centered(glow.rectTransform, Stage);
+            // 모니터 주변만 뚫린 검은 막: 깜빡일 때 방만 살짝 어두워진다
+            Image roomDim = NewImage("L3_RoomDim", world, LoadSprite("title_room_dim.png"), new Color(1f, 1f, 1f, 0f));
+            Centered(roomDim.rectTransform, Stage);
+            roomDim.enabled = false;
 
             // ---------- 타이틀 화면 (모니터 안) ----------
             RectTransform viewport = Stretch(NewUI("ScreenViewport", canvasRect));
@@ -198,10 +202,15 @@ namespace CoffeeSpec.UI
             Row("}", CodeText, false);
 
             // 화면 효과
-            RawImage glowFx = NewRaw("FX_Glow", screen, LoadOrCreateFxTexture("title_fx_screen_glow.png", false));
-            Stretch(glowFx.rectTransform, new Vector2(-200f, -200f), new Vector2(200f, 200f));
+            RawImage glowFx = NewRaw("FX_Vignette", screen, LoadOrCreateFxTexture("title_fx_vignette.png", false));
+            Stretch(glowFx.rectTransform);
             RawImage scan = NewRaw("FX_Scanlines", screen, LoadOrCreateFxTexture("title_fx_scanline.png", true));
             Stretch(scan.rectTransform);
+
+            // ---------- 모니터 화면 빛 (화면 창 위, 마스크 밖이라 베젤 너머까지 번짐) ----------
+            Image bloom = NewImage("ScreenBloom", canvasRect, null, new Color(0.66f, 0.78f, 0.96f, 0f));
+            bloom.raycastTarget = false;
+            bloom.enabled = false;
 
             // ---------- 기획서 클로즈업 ----------
             RectTransform closeup = Stretch(NewUI("DocCloseup", canvasRect));
@@ -300,6 +309,8 @@ namespace CoffeeSpec.UI
             SetLayer(layers.GetArrayElementAtIndex(1), desk.rectTransform, 1f, 1f, 1f);
             SetLayer(layers.GetArrayElementAtIndex(2), glow.rectTransform, 1f, 1f, 1f);
             so.FindProperty("_monitorGlow").objectReferenceValue = glow;
+            so.FindProperty("_roomDim").objectReferenceValue = roomDim;
+            so.FindProperty("_screenBloom").objectReferenceValue = bloom;
             so.FindProperty("_darkOverlay").objectReferenceValue = dark;
             so.FindProperty("_closeupGroup").objectReferenceValue = closeupGroup;
             so.FindProperty("_roomImage").objectReferenceValue = room;
@@ -362,7 +373,7 @@ namespace CoffeeSpec.UI
         {
             string[] names =
             {
-                "title_room.png", "title_desk.png", "title_monitor_glow.png", "title_monitor_glow_soft.png", "title_doc_closeup.png",
+                "title_room.png", "title_desk.png", "title_monitor_glow.png", "title_monitor_glow_soft.png", "title_doc_closeup.png", "title_room_dim.png",
             };
 
             var magenta = new List<string>();
@@ -438,7 +449,7 @@ namespace CoffeeSpec.UI
             string path = SpriteDir + fileName;
             if (!File.Exists(TitleMagentaConverter.ToFullPath(path)))
             {
-                Texture2D tex = scanline ? TitleScreenView.CreateScanlineTexture() : TitleScreenView.CreateGlowTexture(128);
+                Texture2D tex = scanline ? TitleScreenView.CreateScanlineTexture() : TitleScreenView.CreateGlowTexture(256);
                 File.WriteAllBytes(TitleMagentaConverter.ToFullPath(path), tex.EncodeToPNG());
                 Object.DestroyImmediate(tex);
                 AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
@@ -448,7 +459,7 @@ namespace CoffeeSpec.UI
             {
                 importer.textureType = TextureImporterType.Default;
                 importer.alphaIsTransparency = true;
-                importer.filterMode = FilterMode.Point;
+                importer.filterMode = scanline ? FilterMode.Point : FilterMode.Bilinear;
                 importer.wrapMode = scanline ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
                 importer.textureCompression = TextureImporterCompression.Uncompressed;
                 importer.mipmapEnabled = false;
@@ -474,7 +485,7 @@ namespace CoffeeSpec.UI
             var result = new OldTitleSettings();
             foreach (GameObject go in scene.GetRootGameObjects())
             {
-                if (go.name == RootName)
+                if (go.name == RootName || go.name == "[TitleV3]")
                 {
                     // 전에 이 메뉴로 만든 것: 설정만 읽고 지운다
                     ReadTitleUi(go, result);
