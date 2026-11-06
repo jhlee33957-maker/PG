@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using CoffeeSpec.Entities;
+using CoffeeSpec.UI;
 
 namespace CoffeeSpec.Rules
 {
@@ -9,21 +10,39 @@ namespace CoffeeSpec.Rules
     /// CSV의 문장 틀을 골라 태그를 채운 문장을 보관하고, 문장에 든 태그를 보고 효과를 실행한다. 씬에 하나만 둔다.
     /// - 명사|명사: 앞 명사 대상이 뒤 명사로 영구 변신 (태그와 모습)
     /// - 명사|Move: 명사 대상이 문장이 있는 동안 랜덤 이동
+    /// - 접촉: 플레이어가 Exit 태그 객체에 닿으면 클리어
     /// 실행 중 인스펙터에서 문장 목록을 바꾸면 전체 규칙을 다시 적용한다.
     /// </summary>
     public class RuleManager : MonoBehaviour
     {
         [Serializable]
-        public class SentenceSetup
+        public class SentenceSetup : ISerializationCallbackReceiver
         {
             [Tooltip("CSV의 Id 열 값 (예: NounIsNoun)")]
             public string TemplateId;
             [Tooltip("CSV Pattern 순서대로 채울 태그")]
-            public List<WordId> Words = new();
+            public List<WordId> WordIds = new();
+            // 예전 enum 숫자 목록. 불러올 때 WordIds로 옮기고 비운다
+            [HideInInspector] public List<int> Words = new();
             [Tooltip("플레이어에게 보일 문장 (자동 표시)")]
             public string Preview;
+
+            public void OnBeforeSerialize() { }
+
+            public void OnAfterDeserialize()
+            {
+                if (Words == null || Words.Count == 0) return;
+                if (WordIds == null || WordIds.Count == 0)
+                {
+                    WordIds = new List<WordId>();
+                    foreach (int legacy in Words) WordIds.Add(WordId.FromLegacy(legacy));
+                }
+                Words.Clear();
+            }
         }
 
+        [Tooltip("단어 목록 CSV (Id,DisplayName,Type). Data/WordsCSV.csv")]
+        [SerializeField] private TextAsset _wordCsv;
         [Tooltip("문장 틀 CSV (Id,Text,Pattern)")]
         [SerializeField] private TextAsset _sentenceCsv;
         [Tooltip("현재 레벨에서 효력이 있는 문장. 실행 중에 바꿔도 즉시 반영된다")]
@@ -34,11 +53,22 @@ namespace CoffeeSpec.Rules
         private readonly List<RuleEntity> _entities = new();
         private bool _started;
         private bool _rebuildPending;
+        private bool _cleared;
+
+        private static readonly WordId Exit = new("Exit");
+
+        /// <summary>스테이지를 클리어했을 때 알린다. 저장, 다음 스테이지 이동 등은 여기에 구독한다.</summary>
+        public event Action Cleared;
 
         public IReadOnlyList<Sentence> Sentences => _sentences;
         public IReadOnlyCollection<string> TemplateIds => _templates.Keys;
 
-        private void Awake() => LoadTemplates();
+        private void Awake()
+        {
+            // 빌드에서는 경로로 에셋을 읽을 수 없어 참조로 넘겨준다
+            WordTags.Initialize(_wordCsv);
+            LoadTemplates();
+        }
 
         private void Start()
         {
@@ -49,6 +79,7 @@ namespace CoffeeSpec.Rules
         private void OnValidate()
         {
             // 편집 중에도 미리보기 문장을 갱신한다
+            WordTags.Initialize(_wordCsv);
             LoadTemplates();
             foreach (var s in _sentenceSetups)
             {
@@ -79,7 +110,7 @@ namespace CoffeeSpec.Rules
         {
             if (setup == null || string.IsNullOrEmpty(setup.TemplateId)) return null;
             return _templates.TryGetValue(setup.TemplateId.Trim(), out var t)
-                ? new Sentence(t, new List<WordId>(setup.Words)) : null;
+                ? new Sentence(t, new List<WordId>(setup.WordIds)) : null;
         }
 
         private void Rebuild()
@@ -125,12 +156,8 @@ namespace CoffeeSpec.Rules
 
             for (int i = 1; i < s.Words.Count; i++)
             {
-                switch (s.Words[i])
-                {
-                    case WordId.Move:
-                        foreach (var e in GetEntities(subject)) e.SetRandomMove(true);
-                        break;
-                }
+                if (s.Words[i] == WordId.Move) // 효과가 연결된 단어만 여기서 처리한다
+                    foreach (var e in GetEntities(subject)) e.SetRandomMove(true);
             }
         }
 
@@ -146,6 +173,25 @@ namespace CoffeeSpec.Rules
             }
             // 태그가 바뀌는 중에 목록이 달라지지 않도록 먼저 복사한다
             foreach (var e in new List<RuleEntity>(GetEntities(from))) e.TransformInto(to, source);
+        }
+
+        // ---- 접촉 규칙. RuleEntity가 닿을 때마다 보고한다 ----
+
+        /// <summary>두 대상이 닿았다. 양쪽 모두 보고하므로 같은 접촉이 두 번 올 수 있다.</summary>
+        public void ReportContact(RuleEntity a, RuleEntity b)
+        {
+            if (IsExitContact(a, b) || IsExitContact(b, a)) Clear();
+        }
+
+        private static bool IsExitContact(RuleEntity player, RuleEntity other) =>
+            player.IsPlayer && other.Id == Exit;
+
+        private void Clear()
+        {
+            if (_cleared) return;
+            _cleared = true;
+            ClearScreen.Show();
+            Cleared?.Invoke();
         }
 
         // ---- 대상 관리 ----

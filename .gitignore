@@ -60,3 +60,4 @@ desktop.ini
 
 # ===== AI 도구 개인 설정 (공용 설정은 커밋, 개인 설정은 제외) =====
 .claude/settings.local.json
+Assets/_Project/Fonts/NotoSansKR-Regular SDF.asset

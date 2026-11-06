@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using CoffeeSpec.Player;
 using CoffeeSpec.Rules;
 
 namespace CoffeeSpec.Entities
@@ -8,12 +9,14 @@ namespace CoffeeSpec.Entities
     /// 바뀔 수 있는 값만 열어 두고 규칙 내용은 모른다.
     /// </summary>
     [RequireComponent(typeof(SpriteRenderer), typeof(Rigidbody2D))]
-    public class RuleEntity : MonoBehaviour
+    public class RuleEntity : MonoBehaviour, ISerializationCallbackReceiver
     {
         private static readonly Vector2[] Directions = { Vector2.up, Vector2.down, Vector2.left, Vector2.right };
         private static readonly Vector2[] SideDirections = { Vector2.left, Vector2.right };
 
-        [SerializeField] private WordId _id;
+        [SerializeField] private WordId _word;
+        // 예전 enum 숫자가 저장된 칸. 불러올 때 _word로 옮기고 -1로 비운다
+        [SerializeField, HideInInspector] private int _id = -1;
         [SerializeField] private float _moveSpeed = 2f;
         [Tooltip("랜덤 방향을 다시 고르는 간격(초)")]
         [SerializeField] private float _directionInterval = 1f;
@@ -32,7 +35,7 @@ namespace CoffeeSpec.Entities
         private float _timer;
 
         /// <summary>현재 태그. Is 문장으로 바뀔 수 있다.</summary>
-        public WordId Id => _id;
+        public WordId Id => _word;
         /// <summary>배치될 때의 태그. 바뀔 모습을 찾을 때 기준이 된다.</summary>
         public WordId OriginalId => _originalId;
         public Sprite OriginalSprite => _originalSprite;
@@ -40,6 +43,8 @@ namespace CoffeeSpec.Entities
         public bool IsRandomMoving => _randomMove;
         /// <summary>플레이어가 직접 조작 중이면 true. 이때는 랜덤 이동이 속도를 덮어쓰지 않는다.</summary>
         public bool InputOverride { get; set; }
+        /// <summary>플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
+        public bool IsPlayer { get; private set; }
 
         private void Awake()
         {
@@ -51,8 +56,9 @@ namespace CoffeeSpec.Entities
             _originalSize = _renderer.size;
             _originalScale = transform.localScale;
             _collider = GetComponent<Collider2D>();
-            _originalId = _id;
+            _originalId = _word;
             _manager = FindAnyObjectByType<RuleManager>();
+            IsPlayer = GetComponent<PlatformerPlayer>() != null;
         }
 
         private void OnEnable() { if (_manager != null) _manager.Register(this); }
@@ -63,8 +69,9 @@ namespace CoffeeSpec.Entities
         // X는 Y다: 모습과 태그를 함께 바꿔서 이후 문장에서는 Y로 취급되게 한다
         public void TransformInto(WordId id, Sprite sprite)
         {
-            _id = id;
+            _word = id;
             SetSprite(sprite);
+            ApplyBodyType();
         }
 
         /// <summary>
@@ -74,7 +81,7 @@ namespace CoffeeSpec.Entities
         public void TransformInto(WordId id, RuleEntity source)
         {
             if (source == null) return;
-            _id = id;
+            _word = id;
 
             // 발 위치를 유지해야 커진 콜라이더가 바닥에 박히지 않는다
             float oldBottom = _collider != null ? _collider.bounds.min.y : transform.position.y;
@@ -87,6 +94,7 @@ namespace CoffeeSpec.Entities
                 source._originalScale.y, source._originalScale.z);
 
             FitColliderToSprite();
+            ApplyBodyType();
 
             if (_collider != null)
             {
@@ -95,6 +103,16 @@ namespace CoffeeSpec.Entities
                 _rigidbody.position += new Vector2(0f, diff);
                 transform.position += new Vector3(0f, diff, 0f);
             }
+        }
+
+        // 태그가 바뀌면 CSV의 IsStatic에 맞춰 Static/Dynamic을 바꾼다
+        private void ApplyBodyType()
+        {
+            var type = WordTags.IsStatic(_word) ? RigidbodyType2D.Static : RigidbodyType2D.Dynamic;
+            if (_rigidbody.bodyType == type) return;
+            _rigidbody.bodyType = type;
+            // Static으로 굳는 순간 남아 있던 속도 때문에 튀지 않게 한다
+            if (type == RigidbodyType2D.Dynamic) _rigidbody.linearVelocity = Vector2.zero;
         }
 
         // 판정이 그림과 어긋나지 않도록 콜라이더를 지금 그려지는 영역(로컬 기준)에 맞춘다
@@ -123,6 +141,26 @@ namespace CoffeeSpec.Entities
 
         // 문장을 다시 적용하기 전에 지속 효과(이동)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다
         public void ResetState() => SetRandomMove(false);
+
+        // 닿은 상대를 RuleManager에 알리기만 한다. 무엇이 일어날지는 RuleManager가 태그를 보고 정한다
+        private void OnTriggerEnter2D(Collider2D other) => ReportContact(other);
+        private void OnCollisionEnter2D(Collision2D collision) => ReportContact(collision.collider);
+
+        private void ReportContact(Collider2D other)
+        {
+            if (_manager == null) return;
+            var otherEntity = other.GetComponentInParent<RuleEntity>();
+            if (otherEntity != null && otherEntity != this) _manager.ReportContact(this, otherEntity);
+        }
+
+        public void OnBeforeSerialize() { }
+
+        public void OnAfterDeserialize()
+        {
+            if (_id < 0) return;
+            if (_word.IsEmpty) _word = WordId.FromLegacy(_id);
+            _id = -1;
+        }
 
         private void FixedUpdate()
         {
