@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 3255818617615678163}
   - component: {fileID: 4552816598277702161}
   m_Layer: 0
-  m_Name: Pigieon
+  m_Name: Pigeon
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -110,7 +110,7 @@ Rigidbody2D:
   m_Mass: 1
   m_LinearDamping: 0
   m_AngularDamping: 0.05
-  m_GravityScale: 1
+  m_GravityScale: 1.5
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -118,7 +118,7 @@ Rigidbody2D:
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_SleepingMode: 1
   m_CollisionDetection: 0
   m_Constraints: 4
@@ -139,6 +139,15 @@ MonoBehaviour:
   _id: -1
   _moveSpeed: 2
   _directionInterval: 1
+  _colliderCornerRadius: 0.02
+  _groundSnapDistance: 0.1
+  _sinkTolerance: 0.03
+  _flyHeightRange: {x: 6, y: 8}
+  _bobAmplitude: 0.15
+  _bobPeriod: 2
+  _flyFollowStrength: 8
+  _flyMaxSpeed: 6
+  _flyGroundSearchDistance: 20
 --- !u!61 &4552816598277702161
 BoxCollider2D:
   m_ObjectHideFlags: 0

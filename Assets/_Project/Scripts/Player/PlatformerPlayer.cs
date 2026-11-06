@@ -5,7 +5,7 @@ using CoffeeSpec.Entities;
 namespace CoffeeSpec.Player
 {
     /// <summary>
-    /// 2D 플랫포머 플레이어. 좌우 이동(A/D, ←/→), Z 대쉬, X 공격, C 점프.
+    /// 2D 플랫포머 플레이어. 좌우 이동(A/D, ←/→), Z 점프, X 공격, C 대쉬.
     /// 규칙 대상이 되도록 RuleEntity와 같이 붙여서 쓴다(태그는 RuleEntity에서 Person으로 지정).
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(Collider2D), typeof(RuleEntity))]
@@ -16,8 +16,9 @@ namespace CoffeeSpec.Player
         [SerializeField] private float _groundAcceleration = 80f;
         [SerializeField] private float _airAcceleration = 50f;
 
-        [Header("점프 (C)")]
-        [SerializeField] private float _jumpSpeed = 12f;
+        [Header("점프 (Z)")]
+        [Tooltip("점프 시작 속도. 높이는 속도의 제곱에 비례한다")]
+        [SerializeField] private float _jumpSpeed = 8.5f;
         [Tooltip("발판에서 떨어진 직후에도 점프를 받아주는 시간(초)")]
         [SerializeField] private float _coyoteTime = 0.1f;
         [Tooltip("착지 직전에 누른 점프를 기억하는 시간(초)")]
@@ -26,11 +27,11 @@ namespace CoffeeSpec.Player
         [SerializeField, Range(0f, 1f)] private float _jumpCutMultiplier = 0.5f;
         [SerializeField] private float _groundCheckDistance = 0.05f;
 
-        [Header("대쉬 (Z)")]
+        [Header("대쉬 (C)")]
         [SerializeField] private float _dashSpeed = 16f;
         [SerializeField] private float _dashDuration = 0.12f;
         [SerializeField] private float _dashCooldown = 0.4f;
-        [Tooltip("Z를 누르고 있는 동안 이동 속도에 곱하는 값")]
+        [Tooltip("C를 누르고 있는 동안 이동 속도에 곱하는 값")]
         [SerializeField] private float _sprintMultiplier = 1.4f;
 
         [Header("공격 (X)")]
@@ -79,6 +80,8 @@ namespace CoffeeSpec.Player
         {
             var kb = Keyboard.current;
             if (kb == null) return;
+            // 기획서가 열려 있으면(시간 정지) 입력을 받지 않는다. 기획서를 보는 중에 공격·점프가 나가지 않도록
+            if (Time.timeScale == 0f) return;
 
             float x = 0f;
             if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) x += 1f;
@@ -86,10 +89,10 @@ namespace CoffeeSpec.Player
             _inputX = x;
             if (x != 0f && !IsDashing) SetFacing((int)x);
 
-            if (kb.cKey.wasPressedThisFrame) _jumpBufferTimer = _jumpBufferTime;
-            if (kb.cKey.wasReleasedThisFrame) _jumpCutRequested = true;
-            if (kb.zKey.wasPressedThisFrame) _dashRequested = true;
-            _sprintHeld = kb.zKey.isPressed;
+            if (kb.zKey.wasPressedThisFrame) _jumpBufferTimer = _jumpBufferTime;
+            if (kb.zKey.wasReleasedThisFrame) _jumpCutRequested = true;
+            if (kb.cKey.wasPressedThisFrame) _dashRequested = true;
+            _sprintHeld = kb.cKey.isPressed;
             // 입력이 있을 때만 랜덤 이동을 눌러서, 손을 떼면 규칙 이동이 다시 이어지게 한다
             _ruleEntity.InputOverride = x != 0f;
             if (kb.xKey.wasPressedThisFrame) TryAttack();
@@ -105,7 +108,9 @@ namespace CoffeeSpec.Player
             float dt = Time.fixedDeltaTime;
             UpdateGrounded();
 
-            if (_grounded) { _coyoteTimer = _coyoteTime; _airDashAvailable = true; }
+            // 규칙으로 나는 중에는 땅에 닿지 않으므로 대쉬를 계속 쓸 수 있게 한다
+            if (_grounded || _ruleEntity.IsFlying) _airDashAvailable = true;
+            if (_grounded) _coyoteTimer = _coyoteTime;
             else _coyoteTimer -= dt;
 
             if (UpdateDash(dt)) return;
@@ -138,10 +143,20 @@ namespace CoffeeSpec.Player
 
         private void HandleJump()
         {
+            // 규칙으로 나는 중에는 높이를 RuleEntity가 정하므로 점프하지 않는다
+            if (_ruleEntity.IsFlying)
+            {
+                _jumpBufferTimer = 0f;
+                _jumpCutRequested = false;
+                return;
+            }
+
             var v = _rigidbody.linearVelocity;
             if (_jumpBufferTimer > 0f && _coyoteTimer > 0f)
             {
                 v.y = _jumpSpeed;
+                // 점프 직후에 바닥으로 다시 끌어당기지 않게 한다
+                _ruleEntity.BlockGroundSnap(0.15f);
                 _jumpBufferTimer = 0f;
                 _coyoteTimer = 0f;
                 _jumpCutRequested = false;
@@ -177,7 +192,8 @@ namespace CoffeeSpec.Player
             _dashTimer -= dt;
             if (_dashTimer <= 0f)
             {
-                _rigidbody.gravityScale = _defaultGravity;
+                // 나는 중이면 중력을 다시 켜지 않는다 (켜면 떨어진다)
+                _rigidbody.gravityScale = _ruleEntity.IsFlying ? 0f : _defaultGravity;
                 // 대쉬가 끝나면 이동 속도로 줄여서 미끄러지지 않게 한다
                 _rigidbody.linearVelocity = new Vector2(_facing * _moveSpeed, 0f);
             }

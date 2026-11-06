@@ -65,6 +65,10 @@ namespace CoffeeSpec.UI
         [Tooltip("우측 상단 리트 버튼. 기획서가 닫혀 있을 때만 보인다")]
         [SerializeField] private Button _btnRetry;
 
+        [Header("스테이지 보기")]
+        [Tooltip("기획서를 접고 펼치는 버튼 (BTN_Close). 접으면 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
+        [SerializeField] private Button _btnClose;
+
         [Header("빈칸 상자")]
         [Tooltip("빈칸 뒤에 깔리는 상자 (UI_RoundRect_Fill, 9-slice). 비우면 각진 상자")]
         [SerializeField] private Sprite _boxSprite;
@@ -125,6 +129,9 @@ namespace CoffeeSpec.UI
         public event Action RetryRequested;
 
         public bool IsOpen { get; private set; }
+
+        /// <summary>기획서를 연 채(시간 정지) 본문을 접고 스테이지를 보고 있는 중. 이때도 IsOpen은 true다.</summary>
+        public bool IsViewingStage { get; private set; }
 
         private List<StageSpec.Line> _lines;
         private List<SentenceTemplate> _templates;   // 문장 줄만 순서대로
@@ -249,6 +256,7 @@ namespace CoffeeSpec.UI
             _optionToBlank = CreateFilledArray(_spec.WordPool.Count, -1);
             _typedLength = new int[blankCount];
             _typingRoutines = new Coroutine[blankCount];
+            ApplyPresetWords();
 
             CreateOptionButtons();
             SetupTextAppearance();
@@ -271,8 +279,64 @@ namespace CoffeeSpec.UI
             {
                 _btnRetry.onClick.AddListener(RequestRetry);
             }
+            if (_btnClose != null)
+            {
+                _btnClose.onClick.AddListener(() => SetStageView(!IsViewingStage));
+            }
 
             return true;
+        }
+
+        /// <summary>
+        /// StageSpec 줄에 적힌 처음 단어("NounIsNoun, Person _")를 빈칸에 미리 넣어 둔다.
+        /// 단어 묶음에서 아직 안 쓰인 같은 단어를 앞에서부터 쓴다. 미리 넣은 단어도 보통 단어처럼 빼고 옮길 수 있다.
+        /// 타이핑 연출 없이 바로 보인다 (Open에서 타이핑을 끝내 둔다).
+        /// </summary>
+        private void ApplyPresetWords()
+        {
+            IReadOnlyList<WordId> pool = _spec.WordPool;
+            int sentenceIndex = 0;
+            foreach (StageSpec.Line line in _lines)
+            {
+                if (line.Kind != StageSpec.LineKind.Sentence)
+                {
+                    continue;
+                }
+
+                int slotCount = _templates[sentenceIndex].Pattern.Count;
+                for (int slot = 0; slot < line.Preset.Count && slot < slotCount; slot++)
+                {
+                    WordId word = line.Preset[slot];
+                    if (word.IsEmpty)
+                    {
+                        continue;
+                    }
+
+                    int option = FindUnusedOption(pool, word);
+                    if (option < 0)
+                    {
+                        Debug.LogWarning($"[SpecPanel] 처음 단어 '{word}'가 단어 묶음에 남아 있지 않아 빈칸으로 둡니다.", this);
+                        continue;
+                    }
+
+                    int blank = _blankOffsets[sentenceIndex] + slot;
+                    _blankToOption[blank] = option;
+                    _optionToBlank[option] = blank;
+                }
+                sentenceIndex++;
+            }
+        }
+
+        private int FindUnusedOption(IReadOnlyList<WordId> pool, WordId word)
+        {
+            for (int i = 0; i < pool.Count; i++)
+            {
+                if (pool[i] == word && _optionToBlank[i] < 0)
+                {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         private bool ValidateReferences()
@@ -289,6 +353,11 @@ namespace CoffeeSpec.UI
             if (_btnRetry == null)
             {
                 Debug.LogWarning("[SpecPanel] BTN_Retry가 할당되지 않았습니다. R키로만 리트할 수 있습니다.", this);
+            }
+
+            if (_btnClose == null)
+            {
+                Debug.LogWarning("[SpecPanel] BTN_Close가 할당되지 않았습니다. 기획서를 접고 스테이지를 둘러볼 수 없습니다.", this);
             }
 
             if (_documentRoot != null && _documentRoot == gameObject)
@@ -374,6 +443,7 @@ namespace CoffeeSpec.UI
         private void Open()
         {
             IsOpen = true;
+            IsViewingStage = false;
             Time.timeScale = 0f;
 
             // 다시 열 때는 타이핑 연출 없이 이전 값을 그대로 보여 준다
@@ -383,6 +453,7 @@ namespace CoffeeSpec.UI
             _documentRoot.SetActive(true);
             _optionBar.SetActive(true);
             SetRetryButtonVisible(false);
+            SetCloseButtonVisible(true);
 
             RefreshAll();
         }
@@ -390,6 +461,7 @@ namespace CoffeeSpec.UI
         private void Close()
         {
             IsOpen = false;
+            IsViewingStage = false;
             Time.timeScale = 1f;
 
             FinishAllTyping();
@@ -398,6 +470,40 @@ namespace CoffeeSpec.UI
             _optionBar.SetActive(false);
             _documentRoot.SetActive(false);
             SetRetryButtonVisible(true);
+            SetCloseButtonVisible(false);
+        }
+
+        /// <summary>
+        /// 기획서를 연 채(시간은 계속 멈춤) 본문과 단어 바만 접어서 스테이지를 보여 준다.
+        /// 고른 단어는 그대로 남고, 다시 펼치면 이전 상태로 보인다.
+        /// </summary>
+        private void SetStageView(bool viewing)
+        {
+            if (!IsOpen || IsViewingStage == viewing)
+            {
+                return;
+            }
+            IsViewingStage = viewing;
+
+            FinishAllTyping();
+            CancelDrag();
+
+            _documentRoot.SetActive(!viewing);
+            _optionBar.SetActive(!viewing);
+
+            if (!viewing)
+            {
+                RefreshAll();
+            }
+        }
+
+        // 기획서가 열려 있는 동안(접힌 상태 포함)만 보인다. 플레이 중에는 숨긴다
+        private void SetCloseButtonVisible(bool visible)
+        {
+            if (_btnClose != null)
+            {
+                _btnClose.gameObject.SetActive(visible);
+            }
         }
 
         private void SetRetryButtonVisible(bool visible)
