@@ -21,7 +21,7 @@ namespace CoffeeSpec.EditorTools
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
         {
             if (!property.isExpanded) return Line;
-            var words = property.FindPropertyRelative("Words");
+            var words = property.FindPropertyRelative("WordIds");
             // 접기 줄 + Template Id + 단어 칸들 + Preview
             return (Line + Space) * (3 + words.arraySize);
         }
@@ -35,7 +35,7 @@ namespace CoffeeSpec.EditorTools
 
             EditorGUI.indentLevel++;
             var idProp = property.FindPropertyRelative("TemplateId");
-            var words = property.FindPropertyRelative("Words");
+            var words = property.FindPropertyRelative("WordIds");
             var preview = property.FindPropertyRelative("Preview");
 
             var templates = LoadTemplates(property.serializedObject);
@@ -64,7 +64,9 @@ namespace CoffeeSpec.EditorTools
             {
                 rect.y += Line + Space;
                 string slot = template != null ? $"{i + 1}. {template.Pattern[i]}" : $"{i + 1}.";
-                EditorGUI.PropertyField(rect, words.GetArrayElementAtIndex(i), new GUIContent(slot));
+                // 품사 자리에 맞는 단어만 고를 수 있게 걸러서 보여준다
+                WordType? filter = template != null ? template.Pattern[i] : null;
+                WordIdDrawer.Draw(rect, words.GetArrayElementAtIndex(i), new GUIContent(slot), filter);
             }
 
             // Preview (읽기 전용)

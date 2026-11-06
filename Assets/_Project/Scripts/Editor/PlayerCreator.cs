@@ -52,7 +52,7 @@ namespace CoffeeSpec.EditorTools
 
             var entity = go.AddComponent<RuleEntity>();
             var so = new SerializedObject(entity);
-            so.FindProperty("_id").enumValueIndex = (int)WordId.Person;
+            so.FindProperty("_word._value").stringValue = "Person";
             so.ApplyModifiedPropertiesWithoutUndo();
 
             go.AddComponent<PlatformerPlayer>();
