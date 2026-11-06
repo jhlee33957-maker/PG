@@ -142,6 +142,7 @@ MonoBehaviour:
   _colliderCornerRadius: 0.02
   _groundSnapDistance: 0.1
   _sinkTolerance: 0.03
+  _removedByAttack: 1
   _flyHeightRange: {x: 6, y: 8}
   _bobAmplitude: 0.15
   _bobPeriod: 2

@@ -1,6 +1,6 @@
 {
-    "scene": "TestScene",
-    "scenePath": "Assets/Scenes/TestScene.unity",
+    "scene": "Stage1Scene",
+    "scenePath": "Assets/Scenes/Stage1Scene.unity",
     "entries": [
         {
             "prefabPath": "Assets/_Project/Prefabs/Object/Wall.prefab",

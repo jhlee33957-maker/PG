@@ -1,11 +1,12 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
+using CoffeeSpec.Entities;
 
 namespace CoffeeSpec.Player
 {
     /// <summary>
     /// 보이지 않는 공격 판정. 잠깐 존재하면서 닿은 대상을 한 번씩 기록하고 사라진다.
-    /// 아직 피해 시스템이 없어서 맞은 대상은 로그로만 남긴다.
+    /// 맞은 대상이 '공격으로 사라짐'이 켜진 RuleEntity면 숨긴다. 나머지는 로그로만 남긴다.
     /// </summary>
     [RequireComponent(typeof(BoxCollider2D))]
     public class AttackHitbox : MonoBehaviour
@@ -30,6 +31,12 @@ namespace CoffeeSpec.Player
         {
             var target = other.attachedRigidbody != null ? other.attachedRigidbody.gameObject : other.gameObject;
             if (target == _owner || !_hit.Add(target)) return;
+            var entity = target.GetComponentInParent<RuleEntity>();
+            if (entity != null && entity.TryRemoveByAttack())
+            {
+                Debug.Log($"[Attack] {target.name} 명중, 사라짐");
+                return;
+            }
             Debug.Log($"[Attack] {target.name} 명중");
         }
 

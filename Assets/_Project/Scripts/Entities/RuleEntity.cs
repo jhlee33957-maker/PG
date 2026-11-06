@@ -25,6 +25,8 @@ namespace CoffeeSpec.Entities
         [SerializeField, Min(0f)] private float _groundSnapDistance = 0.1f;
         [Tooltip("이보다 깊게 바닥에 박히면 바로 빼낸다. 너무 작으면 물리 엔진과 싸워 떨린다 (1/32 = 1픽셀)")]
         [SerializeField, Min(0.01f)] private float _sinkTolerance = 0.03f;
+        [Tooltip("켜면 플레이어 공격에 맞았을 때 사라진다(숨김). 다른 객체가 이 모습으로 변신하면 이 설정도 따라간다")]
+        [SerializeField] private bool _removedByAttack;
 
         [Header("날기 (Fly)")]
         [Tooltip("날기 시작할 때 발밑 바닥에서 띄울 높이 범위(칸). 대상마다 이 안에서 랜덤으로 고른다")]
@@ -55,6 +57,7 @@ namespace CoffeeSpec.Entities
         private bool _originalIsTrigger;
         private RigidbodyConstraints2D _originalConstraints;
         private RigidbodyType2D _originalBodyType;
+        private bool _originalRemovedByAttack;
         // 지금 모습의 바디 타입. 변신하면 새 모습 프리팹의 타입으로 바뀐다
         private RigidbodyType2D _bodyType;
         private Collider2D _collider;
@@ -72,6 +75,12 @@ namespace CoffeeSpec.Entities
         private int _flyOffFrame = -1; // 날기가 꺼진 프레임. 같은 프레임에 다시 켜지면 높이를 새로 고르지 않는다
         private bool _freezeRotationBeforeFly; // Static 대상은 회전이 안 막혀 있을 수 있어서 나는 동안만 막고 끝나면 되돌린다
 
+        // 서로 밀지 못하게: 스스로 움직이지 않는 동안은 가로 위치를 잠가서 부딪혀도 밀리지 않는다
+        private const float StopSpeed = 0.05f;
+        private bool _baseFreezeX;    // 프리팹(지금 모습) 설정에 원래 가로 고정이 있으면 항상 잠근다
+        private bool _selfDriven;     // 플레이어 조작·대쉬 중 (플레이어가 알려 준다)
+        private bool _keepMomentum;   // 스스로 움직이다 멈추는 중. 속도가 거의 0이 될 때까지는 잠그지 않는다
+
         /// <summary>현재 태그. Is 문장으로 바뀔 수 있다.</summary>
         public WordId Id => _word;
         /// <summary>배치될 때의 태그. 바뀔 모습을 찾을 때 기준이 된다.</summary>
@@ -85,6 +94,8 @@ namespace CoffeeSpec.Entities
         public bool InputOverride { get; set; }
         /// <summary>플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
         public bool IsPlayer { get; private set; }
+        /// <summary>공격으로 사라진(숨겨진) 상태. 규칙과 접촉에서는 빠지지만 변신 원본으로는 계속 쓰인다.</summary>
+        public bool IsRemoved { get; private set; }
 
         private void Awake()
         {
@@ -100,8 +111,10 @@ namespace CoffeeSpec.Entities
             _defaultGravity = _rigidbody.gravityScale;
             _originalIsTrigger = _collider != null && _collider.isTrigger;
             _originalConstraints = _rigidbody.constraints;
+            _baseFreezeX = (_originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
             _originalBodyType = _rigidbody.bodyType;
             _bodyType = _originalBodyType;
+            _originalRemovedByAttack = _removedByAttack;
             _manager = FindAnyObjectByType<RuleManager>();
             IsPlayer = GetComponent<PlatformerPlayer>() != null;
             if (_collider is BoxCollider2D box) RoundCorners(box, box.size);
@@ -253,6 +266,8 @@ namespace CoffeeSpec.Entities
             if (_collider != null) _collider.isTrigger = source._originalIsTrigger;
             _bodyType = source._originalBodyType;
             _defaultGravity = source._defaultGravity;
+            // 공격에 사라지는 성질도 새 모습을 따라간다
+            _removedByAttack = source._originalRemovedByAttack;
             if (_flying)
             {
                 // 나는 중에는 중력 0, 회전 고정을 유지하고 날기가 끝날 때 새 설정으로 돌아가게 한다
@@ -264,6 +279,32 @@ namespace CoffeeSpec.Entities
                 _rigidbody.gravityScale = _defaultGravity;
                 _rigidbody.constraints = source._originalConstraints;
             }
+            _baseFreezeX = (source._originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
+            UpdatePushLock();
+        }
+
+        /// <summary>플레이어가 직접 움직이는 중인지 알려 준다(조작·대쉬). 이때만 가로 잠금이 풀린다.</summary>
+        public void SetSelfDriven(bool driven)
+        {
+            _selfDriven = driven;
+            UpdatePushLock();
+        }
+
+        // 스스로 움직일 때(조작, 대쉬, Move 규칙)와 그 움직임이 멈출 때까지만 가로로 움직일 수 있다.
+        // 그 밖에는 가로 위치를 잠가서 누가 부딪혀도 밀리지 않는다. 세로(중력, 날기)는 그대로다
+        private void UpdatePushLock()
+        {
+            if (IsRemoved || _rigidbody.bodyType != RigidbodyType2D.Dynamic) return;
+            bool driven = _selfDriven || _randomMove;
+            if (driven) _keepMomentum = true;
+            else if (_keepMomentum && Mathf.Abs(_rigidbody.linearVelocity.x) < StopSpeed) _keepMomentum = false;
+
+            bool lockX = _baseFreezeX || !(driven || _keepMomentum);
+            var current = _rigidbody.constraints;
+            var next = lockX
+                ? current | RigidbodyConstraints2D.FreezePositionX
+                : current & ~RigidbodyConstraints2D.FreezePositionX;
+            if (next != current) _rigidbody.constraints = next;
         }
 
         // 지금 모습의 바디 타입(프리팹 기준)을 적용한다. 나는 중에는 Static 모습이어도 Dynamic으로 둔다
@@ -356,6 +397,22 @@ namespace CoffeeSpec.Entities
             _rigidbody.linearVelocity = new Vector2(_rigidbody.linearVelocity.x, vy);
         }
 
+        /// <summary>
+        /// 플레이어 공격에 맞았다. 공격으로 사라지는 대상이면 숨기고 true를 돌려준다.
+        /// 지우지 않고 숨기기만 해서 변신 원본(원래 모습)으로는 계속 쓸 수 있다. 리트·빌드 때 레벨을 다시 깔면 돌아온다.
+        /// </summary>
+        public bool TryRemoveByAttack()
+        {
+            if (!_removedByAttack || IsRemoved || IsPlayer) return false;
+            IsRemoved = true;
+            ResetState();
+            _renderer.enabled = false;
+            foreach (var col in GetComponents<Collider2D>()) col.enabled = false;
+            _rigidbody.linearVelocity = Vector2.zero;
+            _rigidbody.simulated = false;
+            return true;
+        }
+
         // 문장을 다시 적용하기 전에 지속 효과(이동, 날기)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다
         public void ResetState()
         {
@@ -385,6 +442,8 @@ namespace CoffeeSpec.Entities
 
         private void FixedUpdate()
         {
+            if (IsRemoved) return;
+            UpdatePushLock();
             SnapToGround();
             if (_flying) UpdateFly();
             if (!_randomMove) return;
