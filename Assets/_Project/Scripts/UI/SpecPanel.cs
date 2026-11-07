@@ -14,14 +14,15 @@ using UnityEngine.UI;
 namespace CoffeeSpec.UI
 {
     /// <summary>
-    /// 기획서 화면 (코드 에디터 스타일). 스테이지 시작 시 열려서 하단의 단어를 끌어다 빈칸에 놓고,
+    /// 기획서 화면 (코드 에디터 스타일). 스테이지 시작 시 열려서 하단 단어 바의 단어 칩을 끌어다 빈칸에 놓고,
     /// 빌드하면 닫히며 플레이가 시작된다. 문장 틀(SentenceTemplate)과 단어(WordId)는 규칙 시스템의 것을 읽기만 한다.
     ///
     /// 끌어다 놓기 규칙
-    ///   - 단어 바의 단어를 빈칸에 놓으면 채워진다 (빈칸에 있던 단어는 단어 바로 돌아감)
-    ///   - 이미 빈칸에 쓰인 단어는 단어 바에서 반투명하게 보이고 끌 수 없다
-    ///   - 빈칸의 단어를 다른 빈칸에 놓으면 옮겨진다 (놓은 곳에 있던 단어는 단어 바로 돌아감)
-    ///   - 빈칸의 단어를 빈칸이 아닌 곳에 놓으면 빈칸이 비고 단어는 단어 바로 돌아간다
+    ///   - 단어 칩은 처음에 하단 단어 바에 있고, 화면 어디든 끌어다 둘 수 있다 (한 번 꺼낸 칩은 바로 돌아가지 않음)
+    ///   - 칩을 빈칸에 놓으면 문장에 합쳐지고 칩은 사라진다 (빈칸에 있던 단어는 그 근처에 칩으로 튀어나옴)
+    ///   - 빈칸의 단어를 다른 빈칸에 놓으면 옮겨진다 (놓은 곳에 단어가 있었으면 서로 자리를 바꿈)
+    ///   - 빈칸의 단어를 빈칸이 아닌 곳에 놓으면 빈칸이 비고 그 자리에 칩으로 나타난다
+    ///   - 칩 위치는 닫았다 열거나 미리보기·리트를 해도 그대로다. 씬을 새로 불러올 때만 다시 바에서 시작한다
     ///   - 모든 빈칸이 차 있고 품사가 맞지 않는 문장이 없어야 빌드할 수 있다
     ///
     /// 바깥(규칙 시스템)과 주고받는 것 — docs/decisions/004-spec-panel-flow.md 참고
@@ -56,9 +57,10 @@ namespace CoffeeSpec.UI
         [Header("하단 단어 바")]
         [Tooltip("하단 단어 영역. 기획서가 열려 있는 동안 항상 보인다")]
         [SerializeField] private GameObject _optionBar;
-        [Tooltip("단어가 생성될 부모 (Horizontal Layout Group 권장)")]
+        [Tooltip("단어 칩이 처음 놓일 부모 (Horizontal Layout Group 권장). 바에서 꺼낸 칩은 화면 전체 층으로 옮겨진다")]
         [SerializeField] private Transform _optionContainer;
         [SerializeField] private SpecOptionButton _optionButtonPrefab;
+
 
         [Header("플레이 중 화면")]
         [Tooltip("우측 상단 리트 버튼. 기획서가 닫혀 있을 때만 보인다")]
@@ -79,8 +81,7 @@ namespace CoffeeSpec.UI
         [Header("연출")]
         [Tooltip("타이핑 연출에서 글자 하나가 찍히는 간격(초). 0이면 한 번에 표시")]
         [SerializeField, Min(0f)] private float _typingInterval = 0.05f;
-        [Tooltip("빈칸에 쓰인 단어의 투명도 (단어 바)")]
-        [SerializeField, Range(0f, 1f)] private float _usedOptionAlpha = 0.4f;
+
         [Tooltip("비어 있는 빈칸에 표시할 글자")]
         [SerializeField] private string _emptyBlankText = "______";
 
@@ -103,8 +104,12 @@ namespace CoffeeSpec.UI
         [SerializeField] private Color _invalidSentenceColor = Hex("#F06A6A");
         [Tooltip("끌고 있는 단어 칩: 배경 / 테두리 / 글자")]
         [SerializeField] private Color _dragChipColor = Hex("#3A2C1E");
-        [SerializeField] private Color _dragChipOutlineColor = Hex("#E8913B");
+
         [SerializeField] private Color _dragChipTextColor = Hex("#F5C189");
+        [Tooltip("단어 칩 테두리: Verb / Noun / 그 밖의 품사. 품사가 여러 개면 Verb 색을 쓴다. 끌고 있는 칩도 같은 색이다")]
+        [SerializeField] private Color _verbOutlineColor = Hex("#E5534B");
+        [SerializeField] private Color _nounOutlineColor = Hex("#4F8BD6");
+        [SerializeField] private Color _otherOutlineColor = Hex("#8A9099");
         [Tooltip("빌드 버튼: 가능할 때 배경 / 글자")]
         [SerializeField] private Color _buildEnabledColor = Hex("#2EA043");
         [SerializeField] private Color _buildEnabledTextColor = Color.white;
@@ -151,6 +156,7 @@ namespace CoffeeSpec.UI
         private Coroutine[] _typingRoutines;
 
         private readonly List<SpecOptionButton> _optionButtons = new List<SpecOptionButton>();
+        private RectTransform _wordLayer;   // 단어 칩이 자유롭게 놓이는 화면 전체 층
         private readonly StringBuilder _textBuilder = new StringBuilder();
 
         // 빈칸 상자 (텍스트 뒤에 깔림)
@@ -163,6 +169,7 @@ namespace CoffeeSpec.UI
         private int _hoverBlank = -1;      // 끌고 있는 단어 아래의 빈칸
         private RectTransform _dragGhost;  // 마우스를 따라다니는 단어 칩
         private TextMeshProUGUI _dragGhostText;
+        private Image _dragGhostOutline;
 
         private bool _initialized;
 
@@ -267,6 +274,7 @@ namespace CoffeeSpec.UI
             _typingRoutines = new Coroutine[blankCount];
             ApplyPresetWords();
 
+            CreateWordLayer();
             CreateOptionButtons();
             SetupTextAppearance();
             CreateBoxLayer();
@@ -357,6 +365,7 @@ namespace CoffeeSpec.UI
             ok &= CheckAssigned(_btnBuild, "BTN_Build");
             ok &= CheckAssigned(_optionBar, "하단 단어 바(Option Bar)");
             ok &= CheckAssigned(_optionContainer, "단어 부모(Option Container)");
+
             ok &= CheckAssigned(_optionButtonPrefab, "단어 프리팹");
 
             if (_btnRetry == null)
@@ -396,6 +405,7 @@ namespace CoffeeSpec.UI
                 SpecOptionButton button = Instantiate(_optionButtonPrefab, _optionContainer);
                 button.name = $"Word_{i}_{pool[i]}";
                 button.Setup(i, WordTags.DisplayName(pool[i]));
+                button.SetOutline(_boxOutlineSprite, OutlineColorOf(pool[i]));
                 button.DragBegan += OnOptionDragBegan;
                 button.Dragged += (_, eventData) => OnDragMoved(eventData);
                 button.DragEnded += (_, eventData) => OnDragEnded(eventData);
@@ -462,6 +472,7 @@ namespace CoffeeSpec.UI
 
             _documentRoot.SetActive(true);
             _optionBar.SetActive(true);
+            _wordLayer.gameObject.SetActive(true);
             SetRetryButtonVisible(false);
             SetPreviewButtonVisible(true);
 
@@ -479,6 +490,7 @@ namespace CoffeeSpec.UI
             CancelDrag();
 
             _optionBar.SetActive(false);
+            _wordLayer.gameObject.SetActive(false);
             _documentRoot.SetActive(false);
             SetRetryButtonVisible(true);
             SetPreviewButtonVisible(false);
@@ -502,6 +514,7 @@ namespace CoffeeSpec.UI
 
             _documentRoot.SetActive(!viewing);
             _optionBar.SetActive(!viewing);
+            _wordLayer.gameObject.SetActive(!viewing);
 
             if (viewing)
             {
@@ -568,6 +581,10 @@ namespace CoffeeSpec.UI
 
             EnsureDragGhost();
             _dragGhostText.text = WordTags.DisplayName(_spec.WordPool[optionIndex]);
+            if (_dragGhostOutline != null)
+            {
+                _dragGhostOutline.color = OutlineColorOf(_spec.WordPool[optionIndex]);
+            }
             _dragGhostText.ForceMeshUpdate();
             Vector2 textSize = _dragGhostText.GetPreferredValues();
             _dragGhost.sizeDelta = new Vector2(textSize.x + 32f, textSize.y + 14f);
@@ -603,6 +620,7 @@ namespace CoffeeSpec.UI
             int option = _dragOption;
             int fromBlank = _dragFromBlank;
             int targetBlank = FindBlankAt(eventData.position, eventData.pressEventCamera);
+            Vector3 dropWorld = _dragGhost.position; // 마우스를 따라오던 칩이 보이던 자리
             CancelDrag();
 
             if (!IsOpen)
@@ -615,13 +633,25 @@ namespace CoffeeSpec.UI
                 // 같은 빈칸에 다시 놓으면 아무 일도 없다
                 if (targetBlank != fromBlank)
                 {
+                    int displaced = _blankToOption[targetBlank];
                     AssignOption(targetBlank, option);
+
+                    // 바깥 칩을 단어가 든 빈칸에 놓으면 원래 단어는 하단 단어 바로 돌아간다
+                    // (빈칸끼리 옮긴 경우에는 서로 자리를 바꾸므로 밀려나는 단어가 없다)
+                    if (fromBlank < 0 && displaced >= 0)
+                    {
+                        ReturnToBar(displaced);
+                    }
                 }
             }
-            else if (fromBlank >= 0)
+            else
             {
-                // 빈칸의 단어를 빈칸이 아닌 곳에 놓으면 비운다
-                ClearBlank(fromBlank);
+                // 빈칸이 아닌 곳에 놓으면 그 자리에 칩으로 둔다 (빈칸에서 끌어왔으면 빈칸은 빈다)
+                if (fromBlank >= 0)
+                {
+                    ClearBlank(fromBlank);
+                }
+                PlaceWord(option, _wordLayer.InverseTransformPoint(dropWorld));
             }
 
             RefreshAll();
@@ -660,8 +690,7 @@ namespace CoffeeSpec.UI
 
             if (_boxOutlineSprite != null)
             {
-                Image outline = CreateChildImage(_dragGhost, "Outline", _boxOutlineSprite);
-                outline.color = _dragChipOutlineColor;
+                _dragGhostOutline = CreateChildImage(_dragGhost, "Outline", _boxOutlineSprite);
             }
 
             var textObject = new GameObject("Text", typeof(RectTransform));
@@ -849,6 +878,82 @@ namespace CoffeeSpec.UI
             }
         }
 
+        // 품사 색. 품사가 여러 개인 단어는 대표 품사(Verb 우선)를 따른다
+        private Color OutlineColorOf(WordId word)
+        {
+            if (!WordTags.Exists(word))
+            {
+                return _otherOutlineColor;
+            }
+            switch (WordTags.TypeOf(word))
+            {
+                case WordType.Verb: return _verbOutlineColor;
+                case WordType.Noun: return _nounOutlineColor;
+                default: return _otherOutlineColor;
+            }
+        }
+
+        // ---------------- 단어 칩 배치 ----------------
+
+        /// <summary>단어 칩이 놓일 화면 전체 층을 만든다. 기획서 위에 그려지고, 그래픽이 없어 클릭을 가로채지 않는다.</summary>
+        private void CreateWordLayer()
+        {
+            var layerObject = new GameObject("FreeWords", typeof(RectTransform));
+            _wordLayer = (RectTransform)layerObject.transform;
+            _wordLayer.SetParent(_documentText.canvas.rootCanvas.transform, false);
+            StretchFull(_wordLayer);
+            _wordLayer.SetAsLastSibling();
+            layerObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// 칩을 화면 전체 층의 한 점(층 기준 좌표)에 놓는다. 바에 있던 칩이면 바에서 꺼내 층으로 옮긴다.
+        /// 화면 밖으로 나가지 않게 맞춘다.
+        /// </summary>
+        private void PlaceWord(int option, Vector2 localPoint)
+        {
+            var rect = (RectTransform)_optionButtons[option].transform;
+            if (rect.parent != _wordLayer)
+            {
+                Vector2 size = rect.rect.size; // 바의 레이아웃이 정해 준 크기를 그대로 쓴다
+                rect.SetParent(_wordLayer, false);
+                rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = size;
+            }
+            rect.localPosition = ClampToLayer(localPoint, rect.rect.size);
+        }
+
+        /// <summary>칩을 하단 단어 바로 되돌린다. 바 안에서는 단어 묶음 순서대로 자리를 찾아 들어간다.</summary>
+        private void ReturnToBar(int option)
+        {
+            var rect = (RectTransform)_optionButtons[option].transform;
+            if (rect.parent == _optionContainer)
+            {
+                return;
+            }
+
+            // 앞 순서 단어 중 바에 남아 있는 칩 수만큼 뒤에 끼운다
+            int siblingIndex = 0;
+            for (int i = 0; i < option; i++)
+            {
+                if (_optionButtons[i].transform.parent == _optionContainer)
+                {
+                    siblingIndex++;
+                }
+            }
+            rect.SetParent(_optionContainer, false);
+            rect.SetSiblingIndex(siblingIndex);
+        }
+
+        private Vector2 ClampToLayer(Vector2 point, Vector2 size)
+        {
+            Rect area = _wordLayer.rect;
+            Vector2 half = size * 0.5f;
+            point.x = Mathf.Clamp(point.x, area.xMin + half.x, Mathf.Max(area.xMin + half.x, area.xMax - half.x));
+            point.y = Mathf.Clamp(point.y, area.yMin + half.y, Mathf.Max(area.yMin + half.y, area.yMax - half.y));
+            return point;
+        }
+
         // ---------------- 화면 갱신 ----------------
 
         private void RefreshAll()
@@ -862,7 +967,7 @@ namespace CoffeeSpec.UI
         {
             for (int i = 0; i < _optionButtons.Count; i++)
             {
-                _optionButtons[i].SetUsed(_optionToBlank[i] >= 0, _usedOptionAlpha);
+                _optionButtons[i].SetUsed(_optionToBlank[i] >= 0);
             }
         }
 
