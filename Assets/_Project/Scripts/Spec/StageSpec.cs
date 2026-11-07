@@ -5,6 +5,12 @@ using UnityEngine;
 namespace CoffeeSpec.Spec
 {
     /// <summary>
+    /// StageSpec 줄 목록을 인스펙터에서 드롭다운(줄 종류, 문장 틀, 처음 단어)으로 고르게 하는 표시용 속성.
+    /// 저장 형식("NounIsNoun, Person _")은 그대로라 게임 코드에는 영향이 없다. 그리는 쪽은 Editor/StageSpecLineDrawer.
+    /// </summary>
+    public class StageSpecLineAttribute : PropertyAttribute { }
+
+    /// <summary>
     /// 스테이지 하나의 기획서 구성: 어떤 줄이 나오고, 어떤 단어 묶음을 주는지.
     /// 문장 틀과 단어는 규칙 시스템(강석)의 것을 그대로 쓴다. 이 에셋은 "고르는 것"만 한다.
     ///
@@ -55,7 +61,7 @@ namespace CoffeeSpec.Spec
         [SerializeField] private TextAsset _sentenceCsv;
 
         [Tooltip("기획서 줄. 위에서부터 순서대로 표시된다.\n- 문장 틀 Id (예: NounIsNoun)\n- 문장 틀 Id, 처음 단어 (예: NounIsNoun, Person _ / _는 빈칸)\n- // 로 시작하면 주석 줄\n- 비워 두면 빈 줄")]
-        [SerializeField] private List<string> _templateIds = new List<string>();
+        [SerializeField, StageSpecLine] private List<string> _templateIds = new List<string>();
 
         [Tooltip("선택지 묶음. 같은 단어가 여러 번 필요하면 여러 개 넣는다")]
         [SerializeField] private List<WordId> _wordPool = new List<WordId>();

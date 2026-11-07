@@ -106,9 +106,10 @@ namespace CoffeeSpec.UI
         [SerializeField] private Color _dragChipColor = Hex("#3A2C1E");
 
         [SerializeField] private Color _dragChipTextColor = Hex("#F5C189");
-        [Tooltip("단어 칩 테두리: Verb / Noun / 그 밖의 품사. 품사가 여러 개면 Verb 색을 쓴다. 끌고 있는 칩도 같은 색이다")]
+        [Tooltip("단어 칩 테두리: Verb / Noun / Conjunction / 그 밖의 품사. 품사가 여러 개면 Verb 색을 쓴다. 끌고 있는 칩도 같은 색이다")]
         [SerializeField] private Color _verbOutlineColor = Hex("#E5534B");
         [SerializeField] private Color _nounOutlineColor = Hex("#4F8BD6");
+        [SerializeField] private Color _conjunctionOutlineColor = Hex("#3FB950");
         [SerializeField] private Color _otherOutlineColor = Hex("#8A9099");
         [Tooltip("빌드 버튼: 가능할 때 배경 / 글자")]
         [SerializeField] private Color _buildEnabledColor = Hex("#2EA043");
@@ -153,6 +154,7 @@ namespace CoffeeSpec.UI
         private int[] _blankToOption;   // 빈칸 → 들어 있는 단어(묶음에서의 번호). 비었으면 -1
         private int[] _optionToBlank;   // 단어(묶음에서의 번호) → 들어가 있는 빈칸. 안 쓰였으면 -1
         private int[] _typedLength;     // 빈칸마다 지금까지 타이핑된 글자 수
+        private string[] _blankForms;   // 빈칸마다 보여줄 활용형 이름(문장 틀의 {n@If}). 없으면 null
         private Coroutine[] _typingRoutines;
 
         private readonly List<SpecOptionButton> _optionButtons = new List<SpecOptionButton>();
@@ -266,6 +268,14 @@ namespace CoffeeSpec.UI
             {
                 _blankOffsets[i] = blankCount;
                 blankCount += _templates[i].Pattern.Count;
+            }
+            _blankForms = new string[blankCount];
+            for (int i = 0; i < _templates.Count; i++)
+            {
+                for (int slot = 0; slot < _templates[i].Pattern.Count; slot++)
+                {
+                    _blankForms[_blankOffsets[i] + slot] = _templates[i].SlotForm(slot);
+                }
             }
 
             _blankToOption = CreateFilledArray(blankCount, -1);
@@ -889,6 +899,7 @@ namespace CoffeeSpec.UI
             {
                 case WordType.Verb: return _verbOutlineColor;
                 case WordType.Noun: return _nounOutlineColor;
+                case WordType.Conjunction: return _conjunctionOutlineColor;
                 default: return _otherOutlineColor;
             }
         }
@@ -1046,12 +1057,12 @@ namespace CoffeeSpec.UI
                 _textBuilder.Append(text, cursor, match.Index - cursor);
 
                 int slot = int.Parse(match.Groups[1].Value);
-                if (match.Groups[2].Success)
+                if (match.Groups[3].Success)
                 {
                     // 끝말: 빈칸 단어가 다 써진 뒤에 그 단어 품사에 맞는 말을 붙인다
                     if (slot < template.Pattern.Count)
                     {
-                        AppendEnding(_blankOffsets[sentenceIndex] + slot, match.Groups[2].Value);
+                        AppendEnding(_blankOffsets[sentenceIndex] + slot, match.Groups[3].Value);
                     }
                     else
                     {
@@ -1386,7 +1397,9 @@ namespace CoffeeSpec.UI
             {
                 return string.Empty;
             }
-            return WordTags.DisplayName(_spec.WordPool[option]) ?? string.Empty;
+            // 문장 틀이 {n@If}처럼 활용형을 고른 빈칸이면 그 활용형으로 보여준다 (예: 난다 → 날면)
+            string form = _blankForms != null && blankIndex < _blankForms.Length ? _blankForms[blankIndex] : null;
+            return WordTags.Form(_spec.WordPool[option], form) ?? string.Empty;
         }
 
         private static void ApplySprite(Image image, Sprite sprite)

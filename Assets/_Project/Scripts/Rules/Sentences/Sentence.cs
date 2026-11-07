@@ -31,10 +31,9 @@ namespace CoffeeSpec.Rules
             {
                 int slot = int.Parse(m.Groups[1].Value);
                 if (slot >= Words.Count) return m.Value;
-                // {n}은 단어, {n:품사=말}은 그 단어 품사에 맞는 끝말
-                return m.Groups[2].Success
-                    ? SentenceTemplate.ResolveEnding(m.Groups[2].Value, Words[slot])
-                    : WordTags.DisplayName(Words[slot]);
+                // {n}은 단어, {n@활용형}은 그 활용형(예: 날면), {n:품사=말}은 그 단어 품사에 맞는 끝말
+                if (m.Groups[3].Success) return SentenceTemplate.ResolveEnding(m.Groups[3].Value, Words[slot]);
+                return WordTags.Form(Words[slot], m.Groups[2].Success ? m.Groups[2].Value : null);
             });
 
         public override string ToString() => $"{Template?.Id}({string.Join(", ", Words)})";

@@ -1,7 +1,12 @@
-﻿Id,DisplayName,Type
-Person,사람,Noun
-Pigeon,비둘기,Noun
-Move,움직인다,Verb
-Wall,벽,Noun
-Exit,출구,Noun
-Fly,난다,Verb
+﻿Id,DisplayName,Type,If DisplayName
+Person,사람,Noun,
+Pigeon,비둘기,Noun,
+Move,움직인다,Verb,움직이
+Wall,벽,Noun,
+Exit,출구,Noun,
+Fly,난다,Verb,날
+Control,조종 할 수 있다,Verb,조종 할 수 있으
+Win,도착지점이다,Verb,도착지점이
+Monster,몬스터,Noun,
+Spike,가시,Noun,
+Die,사망한다,Verb,사망하

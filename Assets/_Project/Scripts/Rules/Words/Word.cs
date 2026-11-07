@@ -8,9 +8,8 @@ namespace CoffeeSpec.Rules
     public enum WordType
     {
         Noun,       // 명사
-        Adjective,  // 형용사
         Verb,       // 동사
-        Object      // 목적어
+        Conjunction // 접속사 (If 등)
     }
 
     /// <summary>
@@ -68,7 +67,14 @@ namespace CoffeeSpec.Rules
             public WordId Id;
             public string DisplayName;
             public WordType Type;
+            // Type 뒤에 추가한 열(예: If). 열 이름 → 그 단어의 활용형
+            public Dictionary<string, string> Forms = new(StringComparer.OrdinalIgnoreCase);
         }
+
+        /// <summary>조건(~면) 활용형 열 이름. 이 열이 비어 있는 명사는 받침을 보고 자동으로 만든다.</summary>
+        public const string IfForm = "If";
+
+        private static readonly HashSet<string> WarnedForms = new();
 
         private static Dictionary<WordId, Entry> _entries;
         private static List<Entry> _ordered;
@@ -97,6 +103,37 @@ namespace CoffeeSpec.Rules
             return _entries.TryGetValue(id, out var e) ? e.DisplayName : id.Value;
         }
 
+        /// <summary>
+        /// 활용형 이름(WordsCSV의 열 이름)에 맞는 말. 칸에 적힌 말이 있으면 그대로 쓴다.
+        /// 비어 있으면 명사의 If형만 받침을 보고 만들고(사람이, 비둘기), 나머지는 경고 후 표시 이름을 쓴다.
+        /// '면'은 문장 틀에 직접 적으므로({1@If}면) 여기서는 붙이지 않는다. 동사 칸에는 '날'처럼 '면' 앞까지만 적는다.
+        /// form이 비어 있으면 표시 이름을 돌려준다.
+        /// </summary>
+        public static string Form(WordId id, string form)
+        {
+            if (string.IsNullOrEmpty(form)) return DisplayName(id);
+            EnsureLoaded();
+            if (!_entries.TryGetValue(id, out var e)) return id.Value;
+            if (e.Forms.TryGetValue(form, out var text) && text.Length > 0) return text;
+
+            if (e.Type == WordType.Noun && string.Equals(form, IfForm, StringComparison.OrdinalIgnoreCase))
+                return e.DisplayName + (EndsWithFinalConsonant(e.DisplayName) ? "이" : "");
+
+            // 같은 경고가 매 프레임 쌓이지 않게 단어·활용형마다 한 번만 남긴다
+            if (WarnedForms.Add($"{e.Id}@{form}"))
+                Debug.LogWarning($"[WordTags] {e.Id}의 {form} 활용형이 WordsCSV에 비어 있어 표시 이름을 씀");
+            return e.DisplayName;
+        }
+
+        // 마지막 글자에 받침이 있는지. 한글이 아니면 받침이 있는 것으로 보고 '이'를 붙인다
+        private static bool EndsWithFinalConsonant(string word)
+        {
+            if (string.IsNullOrEmpty(word)) return false;
+            char last = word[word.Length - 1];
+            if (last < '\uAC00' || last > '\uD7A3') return true;
+            return (last - '\uAC00') % 28 != 0;
+        }
+
         /// <summary>CSV가 바뀌었을 때 다시 읽는다. 에디터 임포트 훅에서 호출한다.</summary>
         public static void Reload() { _entries = null; EnsureLoaded(); }
 
@@ -105,6 +142,7 @@ namespace CoffeeSpec.Rules
             if (_entries != null) return;
             _entries = new Dictionary<WordId, Entry>();
             _ordered = new List<Entry>();
+            WarnedForms.Clear();
 
             var csv = _source;
 #if UNITY_EDITOR
@@ -119,6 +157,8 @@ namespace CoffeeSpec.Rules
             }
 
             var lines = csv.text.Replace("\r", "").TrimStart('\uFEFF').Split('\n');
+            // 헤더의 4번째 열부터는 활용형 이름이다 (예: Id,DisplayName,Type,If)
+            var header = lines.Length > 0 ? lines[0].Split(',') : Array.Empty<string>();
             for (int i = 1; i < lines.Length; i++) // 첫 줄은 헤더
             {
                 var line = lines[i].Trim();
@@ -135,6 +175,14 @@ namespace CoffeeSpec.Rules
                     continue;
                 }
                 var entry = new Entry { Id = new WordId(cols[0]), DisplayName = cols[1].Trim(), Type = type };
+                for (int c = 3; c < cols.Length && c < header.Length; c++)
+                {
+                    // 열 이름은 'If'나 'If DisplayName' 둘 다 받는다
+                    var formName = header[c].Trim();
+                    if (formName.EndsWith(" DisplayName", StringComparison.OrdinalIgnoreCase))
+                        formName = formName.Substring(0, formName.Length - " DisplayName".Length).Trim();
+                    if (formName.Length > 0) entry.Forms[formName] = cols[c].Trim();
+                }
                 if (entry.Id.IsEmpty || _entries.ContainsKey(entry.Id))
                 {
                     Debug.LogWarning($"[WordTags] 비었거나 중복된 Id: {cols[0]}");
@@ -144,27 +192,5 @@ namespace CoffeeSpec.Rules
                 _ordered.Add(entry);
             }
         }
-    }
-
-    /// <summary>
-    /// 모든 단어를 하나의 클래스로 표현하고, 품사와 의미 태그로만 구분한다.
-    /// 사람, 비둘기, 움직인다 같은 단어는 이 클래스의 에셋으로 만든다.
-    /// </summary>
-    [CreateAssetMenu(menuName = "CoffeeSpec/Word", fileName = "Word_New")]
-    public class Word : ScriptableObject
-    {
-        [SerializeField] private string _displayName;
-        [SerializeField] private WordType _type;
-        [SerializeField] private WordId _id;
-        [Tooltip("명사일 때 대상의 모습. 'X는 Y다' 문장에서 X가 이 모습으로 바뀐다")]
-        [SerializeField] private Sprite _sprite;
-
-        public string DisplayName => string.IsNullOrEmpty(_displayName) ? name : _displayName;
-        public WordType Type => _type;
-        public WordId Id => _id;
-        public Sprite Sprite => _sprite;
-
-        public bool Is(WordType type) => _type == type;
-        public bool Is(WordId id) => _id == id;
     }
 }

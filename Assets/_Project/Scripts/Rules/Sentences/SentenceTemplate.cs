@@ -10,11 +10,16 @@ namespace CoffeeSpec.Rules
     public class SentenceTemplate
     {
         /// <summary>
-        /// 문구 안의 빈칸 {0}과 끝말 {1:Noun=이다}를 함께 찾는다.
+        /// 문구 안의 빈칸 {0}, 활용형 빈칸 {0@If}, 끝말 {1:Noun=이다}를 함께 찾는다.
+        /// 그룹 1: 빈칸 번호, 그룹 2: 활용형 이름(WordsCSV의 열 이름), 그룹 3: 끝말 규칙.
+        /// 활용형 빈칸은 단어의 표시 이름 대신 WordsCSV에서 그 이름의 열에 적힌 말을 보여준다 (예: 난다 → 날면).
         /// 끝말은 그 번호 빈칸에 들어간 단어의 품사에 맞는 말만 붙고, 맞는 품사가 없으면 아무것도 붙지 않는다.
         /// 여러 품사는 {1:Noun=이다,Verb=...}처럼 쉼표로 적는다.
         /// </summary>
-        public static readonly Regex TokenPattern = new(@"\{(\d+)(?::([^}]*))?\}", RegexOptions.Compiled);
+        public static readonly Regex TokenPattern = new(@"\{(\d+)(?:@([A-Za-z]\w*))?(?::([^}]*))?\}", RegexOptions.Compiled);
+
+        // 빈칸마다 보여줄 활용형 이름. 없으면 null (표시 이름 그대로)
+        private readonly string[] _slotForms;
 
         public string Id { get; }
         public string Text { get; }
@@ -26,7 +31,18 @@ namespace CoffeeSpec.Rules
             Id = id;
             Text = text;
             Pattern = pattern;
+
+            _slotForms = new string[pattern.Count];
+            foreach (Match m in TokenPattern.Matches(text ?? string.Empty))
+            {
+                if (m.Groups[3].Success || !m.Groups[2].Success) continue;
+                int slot = int.Parse(m.Groups[1].Value);
+                if (slot < _slotForms.Length && _slotForms[slot] == null) _slotForms[slot] = m.Groups[2].Value;
+            }
         }
+
+        /// <summary>이 빈칸이 보여줄 활용형 이름(예: If). 그냥 {n}이면 null.</summary>
+        public string SlotForm(int slot) => slot >= 0 && slot < _slotForms.Length ? _slotForms[slot] : null;
 
         /// <summary>이 빈칸에 이 단어를 넣을 수 있는지. 단어의 품사가 빈칸의 품사 목록에 있으면 된다.</summary>
         public bool Accepts(int slot, WordId word)

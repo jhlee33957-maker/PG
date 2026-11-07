@@ -1,4 +1,5 @@
-﻿using CoffeeSpec.Player;
+﻿using CoffeeSpec.Entities;
+using CoffeeSpec.Rules;
 using CoffeeSpec.UI;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -7,7 +8,8 @@ using UnityEngine.InputSystem;
 namespace CoffeeSpec.Cameras
 {
     /// <summary>
-    /// 메인 카메라에 붙인다. 플레이 중에는 플레이어를 부드럽게 따라가고,
+    /// 메인 카메라에 붙인다. 플레이 중에는 조종 대상(Control 문장을 받은 대상)들의 한가운데를 부드럽게 따라가고,
+    /// 조종 대상이 여럿이면 모두 화면에 들어오도록 카메라를 넓힌다(줌아웃). 다 모이면 원래 크기로 돌아온다.
     /// 기획서(SpecPanel)가 열려 있으면 씬에 배치된 원래 위치로 돌아가 맵 전체를 비춘다.
     /// 기획서를 BTN_Close로 접으면 마우스 드래그나 WASD/방향키로 맵을 둘러볼 수 있다.
     /// 플레이어와 기획서는 씬에서 알아서 찾는다 (리트로 플레이어가 새로 생겨도 다시 찾는다).
@@ -24,6 +26,14 @@ namespace CoffeeSpec.Cameras
         [Tooltip("스프라이트의 Pixels Per Unit. 카메라를 이 픽셀 격자에 맞춰 세워서 화면이 일렁이지 않게 한다. 0이면 맞추지 않는다")]
         [SerializeField, Min(0)] private int _pixelsPerUnit = 32;
 
+        [Header("여러 조종 대상 (줌)")]
+        [Tooltip("조종 대상들을 감싼 범위 바깥에 남길 여백(칸). x는 좌우, y는 위아래")]
+        [SerializeField] private Vector2 _groupPadding = new(3f, 2f);
+        [Tooltip("넓혀도 이 크기(orthographicSize)보다 커지지 않는다. 0이면 제한 없음")]
+        [SerializeField, Min(0f)] private float _maxOrthographicSize = 20f;
+        [Tooltip("카메라 크기가 바뀌는 데 걸리는 시간(초)")]
+        [SerializeField, Min(0f)] private float _zoomSmoothTime = 0.3f;
+
         [Header("스테이지 보기 (드래그 / 키보드)")]
         [Tooltip("WASD/방향키로 움직이는 속도 (초당 월드 유닛)")]
         [SerializeField, Min(0f)] private float _keyboardPanSpeed = 10f;
@@ -38,7 +48,9 @@ namespace CoffeeSpec.Cameras
         private Vector3 _homePosition;
         private Vector3 _velocity;
         private Vector3 _smoothPosition; // 픽셀에 맞추기 전의 부드러운 위치
-        private Transform _player;
+        private RuleManager _ruleManager;
+        private float _homeSize;       // 씬에 놓인 카메라 크기. 조종 대상이 하나일 때와 기획서 화면에서 쓴다
+        private float _sizeVelocity;
         private SpecPanel _specPanel;
 
         // 드래그 상태
@@ -54,6 +66,7 @@ namespace CoffeeSpec.Cameras
             // 씬에 놓인 카메라 위치가 기획서 화면용 위치다
             _homePosition = transform.position;
             _smoothPosition = _homePosition;
+            _homeSize = _camera.orthographicSize;
         }
 
         private void LateUpdate()
@@ -70,6 +83,9 @@ namespace CoffeeSpec.Cameras
 
             if (viewingStage)
             {
+                // 둘러보기 범위는 원래 화면 크기 기준이라 크기부터 되돌린다
+                _camera.orthographicSize = _homeSize;
+                _sizeVelocity = 0f;
                 UpdatePan();
                 return;
             }
@@ -79,6 +95,7 @@ namespace CoffeeSpec.Cameras
 
             Vector3 target;
             float smoothTime;
+            float targetSize = _homeSize;
             if (showHome)
             {
                 target = _homePosition;
@@ -86,20 +103,45 @@ namespace CoffeeSpec.Cameras
             }
             else
             {
-                if (_player == null)
-                {
-                    var player = FindAnyObjectByType<PlatformerPlayer>();
-                    if (player == null) return;
-                    _player = player.transform;
-                }
-                target = new Vector3(_player.position.x + _offset.x, _player.position.y + _offset.y, _homePosition.z);
+                if (!TryGetControlledBounds(out Bounds group)) return;
+                target = new Vector3(group.center.x + _offset.x, group.center.y + _offset.y, _homePosition.z);
+                targetSize = SizeToFit(group);
                 smoothTime = _followSmoothTime;
             }
+
+            _camera.orthographicSize = Mathf.SmoothDamp(_camera.orthographicSize, targetSize, ref _sizeVelocity,
+                _zoomSmoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
 
             // 기획서가 열려 있으면 timeScale이 0이라 실제 시간으로 움직인다
             _smoothPosition = Vector3.SmoothDamp(_smoothPosition, target, ref _velocity,
                 smoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
             transform.position = SnapToPixel(_smoothPosition);
+        }
+
+        // 조종 대상 전부의 위치를 감싸는 범위. 하나도 없으면 false (카메라를 그대로 둔다)
+        private bool TryGetControlledBounds(out Bounds bounds)
+        {
+            bounds = default;
+            if (_ruleManager == null) _ruleManager = FindAnyObjectByType<RuleManager>();
+            if (_ruleManager == null) return false;
+
+            bool any = false;
+            foreach (var e in _ruleManager.GetControlled())
+            {
+                Vector3 p = e.transform.position;
+                if (!any) { bounds = new Bounds(new Vector3(p.x, p.y, 0f), Vector3.zero); any = true; }
+                else bounds.Encapsulate(new Vector3(p.x, p.y, 0f));
+            }
+            return any;
+        }
+
+        // 범위와 여백이 화면 안에 다 들어오는 카메라 크기. 원래 크기보다 작아지지는 않는다
+        private float SizeToFit(Bounds group)
+        {
+            float halfHeight = group.extents.y + _groupPadding.y + Mathf.Abs(_offset.y);
+            float halfWidth = group.extents.x + _groupPadding.x + Mathf.Abs(_offset.x);
+            float size = Mathf.Max(_homeSize, halfHeight, halfWidth / Mathf.Max(0.01f, _camera.aspect));
+            return _maxOrthographicSize > 0f ? Mathf.Min(size, Mathf.Max(_homeSize, _maxOrthographicSize)) : size;
         }
 
         // ---------------- 스테이지 보기 드래그 ----------------

@@ -17,7 +17,7 @@ namespace CoffeeSpec.EditorTools
     {
         public const string EditorScenePath = "Assets/Scenes/EditorScene.unity";
         private const string LevelRootName = "Level";
-        private const string PrefabFolder = "Assets/_Project/Prefabs";
+        private const string PrefabFolder = "Assets/_Project/Prefabs/Object"; // 배치용 프리팹만 목록에 띄운다
         private const string MapDataFolder = "Assets/_Project/Data/MapData";
 
         [SerializeField] private bool _useSnap = true;
@@ -35,6 +35,11 @@ namespace CoffeeSpec.EditorTools
         private readonly HashSet<Vector2Int> _strokeCells = new();
         private bool _dragging;
         private Vector3 _lastPlaced;
+        // Scene 뷰 키보드 이동 (WASD, Shift로 두 배)
+        private const float KeyboardPanSpeed = 1.5f;
+        private readonly HashSet<KeyCode> _panKeys = new();
+        private bool _panShiftHeld;
+        private double _lastPanTime;
 
         [Serializable]
         private class MapData
@@ -54,6 +59,9 @@ namespace CoffeeSpec.EditorTools
             public Vector3 scale;
         }
 
+        /// <summary>EditorScene의 Level을 비운 뒤 저장할 때는 true로 둬서 맵 데이터가 빈 배치로 덮이지 않게 한다.</summary>
+        public static bool SuppressAutoSave;
+
         /// <summary>EditorScene을 비웠을 때 드롭다운도 "맵 선택"으로 되돌린다.</summary>
         public static void ResetCurrentMap()
         {
@@ -72,11 +80,16 @@ namespace CoffeeSpec.EditorTools
             RefreshPrefabs();
             RefreshJsonList();
             SceneView.duringSceneGui += OnSceneGUI;
+            EditorSceneManager.sceneSaving += OnEditorSceneSaving;
+            EditorApplication.update += UpdateKeyboardPan;
         }
 
         private void OnDisable()
         {
             SceneView.duringSceneGui -= OnSceneGUI;
+            EditorSceneManager.sceneSaving -= OnEditorSceneSaving;
+            EditorApplication.update -= UpdateKeyboardPan;
+            _panKeys.Clear();
             _selected = null;
         }
 
@@ -187,6 +200,7 @@ namespace CoffeeSpec.EditorTools
         private void OnSceneGUI(SceneView view)
         {
             var e = Event.current;
+            HandleKeyboardPan(e);
 
             // EditorScene에서는 우클릭(누른 채 드래그 포함)으로 Level 밑의 프리팹을 지운다
             if (SceneManager.GetActiveScene().path == EditorScenePath && e.button == 1 && !e.alt &&
@@ -250,20 +264,26 @@ namespace CoffeeSpec.EditorTools
             if (e.type == EventType.MouseMove || e.type == EventType.MouseDrag) view.Repaint();
         }
 
-        // 마우스 아래의 오브젝트에서 Level 바로 밑의 프리팹 인스턴스를 찾아 지운다
-        private static void TryErase(Vector2 mouse)
+        // 마우스 아래의 오브젝트에서 Level 바로 밑의 프리팹 인스턴스를 찾는다. Level 밖(카메라, UI 등)이면 null
+        private static Transform FindErasable(Vector2 mouse)
         {
             var picked = HandleUtility.PickGameObject(mouse, false);
-            if (picked == null) return;
+            if (picked == null) return null;
             var root = FindLevelRoot(picked.scene);
-            if (root == null) return;
+            if (root == null) return null;
 
             Transform t = picked.transform;
             while (t != null && t.parent != root.transform) t = t.parent;
-            if (t == null) return; // Level 밖의 오브젝트(카메라, UI 등)는 지우지 않는다
+            return t;
+        }
 
+        private static void TryErase(Vector2 mouse)
+        {
+            var t = FindErasable(mouse);
+            if (t == null) return;
+            var scene = t.gameObject.scene;
             Undo.DestroyObjectImmediate(t.gameObject);
-            EditorSceneManager.MarkSceneDirty(root.scene);
+            EditorSceneManager.MarkSceneDirty(scene);
         }
 
         private void PlaceAlongLine(Vector3 from, Vector3 to)
@@ -336,6 +356,58 @@ namespace CoffeeSpec.EditorTools
             EditorSceneManager.MarkSceneDirty(go.scene);
         }
 
+        // ───────────── Scene 뷰 키보드 이동 ─────────────
+
+        // EditorScene에서 WASD를 누르고 있는 동안 화면을 옮긴다. 키 입력만 여기서 받고 실제 이동은 UpdateKeyboardPan에서 한다
+        private void HandleKeyboardPan(Event e)
+        {
+            if (e.type != EventType.KeyDown && e.type != EventType.KeyUp) return;
+            if (SceneManager.GetActiveScene().path != EditorScenePath) return;
+            _panShiftHeld = e.shift;
+
+            KeyCode k = e.keyCode;
+            if (k != KeyCode.W && k != KeyCode.A && k != KeyCode.S && k != KeyCode.D) return;
+
+            if (e.type == EventType.KeyDown)
+            {
+                // Ctrl+S 같은 단축키와 우클릭 비행 모드(Unity 기본 WASD)는 그대로 둔다
+                if (e.control || e.command || e.alt || Tools.viewTool == ViewTool.FPS) return;
+                _panKeys.Add(k);
+                e.Use(); // W가 이동 툴로 바뀌는 것 같은 기본 단축키를 막는다
+            }
+            else if (_panKeys.Remove(k))
+            {
+                e.Use();
+            }
+        }
+
+        private void UpdateKeyboardPan()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            float dt = Mathf.Min((float)(now - _lastPanTime), 0.1f);
+            _lastPanTime = now;
+            if (_panKeys.Count == 0) return;
+
+            var view = SceneView.lastActiveSceneView;
+            if (view == null || EditorWindow.focusedWindow != view)
+            {
+                _panKeys.Clear(); // 다른 창으로 포커스가 넘어가면 키를 뗀 것으로 본다
+                return;
+            }
+
+            Vector3 dir = Vector3.zero;
+            if (_panKeys.Contains(KeyCode.W)) dir.y += 1f;
+            if (_panKeys.Contains(KeyCode.S)) dir.y -= 1f;
+            if (_panKeys.Contains(KeyCode.D)) dir.x += 1f;
+            if (_panKeys.Contains(KeyCode.A)) dir.x -= 1f;
+            if (dir == Vector3.zero) return;
+
+            // 줌 정도(view.size)에 비례해서 움직여야 확대/축소와 상관없이 화면 기준 속도가 같다
+            float speed = view.size * KeyboardPanSpeed * (_panShiftHeld ? 2f : 1f);
+            view.pivot += view.rotation * dir.normalized * (speed * dt);
+            view.Repaint();
+        }
+
         // ───────────── 맵 불러오기 / 저장 ─────────────
 
         private bool CheckInEditorScene()
@@ -378,13 +450,46 @@ namespace CoffeeSpec.EditorTools
                 return;
 
             WriteJson(jsonPath, data);
+            ApplyToScene(data);
+        }
 
+        // 대상 씬의 Level을 데이터대로 바꾸고 저장한다
+        private static void ApplyToScene(MapData data)
+        {
             var target = OpenScene(data.scenePath, out bool openedHere);
             if (!target.IsValid()) return;
             Apply(target, data);
             EditorSceneManager.SaveScene(target);
             if (openedHere) EditorSceneManager.CloseScene(target, true);
             Debug.Log($"[LevelEditor] {data.scene}에 {data.entries.Count}개를 저장했어.");
+        }
+
+        /// <summary>
+        /// EditorScene을 저장할 때(Ctrl+S, 씬을 바꿀 때 나오는 창의 Save 포함) 불러온 맵의 JSON과 대상 씬도 같이 저장한다.
+        /// 지금 배치는 바로 읽어 두고, 실제 쓰기는 씬 저장이 끝난 뒤에 한다 (저장 도중에 다른 씬을 열고 저장하지 않기 위해).
+        /// </summary>
+        private void OnEditorSceneSaving(Scene scene, string path)
+        {
+            if (SuppressAutoSave || path != EditorScenePath || string.IsNullOrEmpty(_currentJson)) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
+            string jsonPath = _currentJson;
+            var old = ReadJson(jsonPath);
+            if (old == null) return;
+            var data = Capture(scene, allowRootFallback: false);
+            data.scene = old.scene;
+            data.scenePath = ResolveScenePath(old);
+            if (string.IsNullOrEmpty(data.scenePath))
+            {
+                Debug.LogWarning($"[LevelEditor] {old.scene} 씬을 찾을 수 없어서 맵 데이터는 저장하지 않았어.");
+                return;
+            }
+
+            EditorApplication.delayCall += () =>
+            {
+                WriteJson(jsonPath, data);
+                ApplyToScene(data);
+            };
         }
 
         // 아직 JSON이 없는 씬의 배치를 읽어 새 맵 JSON을 만든다
@@ -558,7 +663,9 @@ namespace CoffeeSpec.EditorTools
                 if (root.transform.childCount == 0) return;
                 for (int i = root.transform.childCount - 1; i >= 0; i--)
                     UnityEngine.Object.DestroyImmediate(root.transform.GetChild(i).gameObject);
-                EditorSceneManager.SaveScene(scene);
+                LevelEditorWindow.SuppressAutoSave = true; // 비운 배치가 맵 데이터로 저장되지 않게 한다
+                try { EditorSceneManager.SaveScene(scene); }
+                finally { LevelEditorWindow.SuppressAutoSave = false; }
                 LevelEditorWindow.ResetCurrentMap();
                 return;
             }
