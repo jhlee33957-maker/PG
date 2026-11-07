@@ -9,7 +9,7 @@ namespace CoffeeSpec.Cameras
     /// <summary>
     /// 메인 카메라에 붙인다. 플레이 중에는 플레이어를 부드럽게 따라가고,
     /// 기획서(SpecPanel)가 열려 있으면 씬에 배치된 원래 위치로 돌아가 맵 전체를 비춘다.
-    /// 기획서를 BTN_Close로 접으면 마우스 드래그로 맵을 둘러볼 수 있다.
+    /// 기획서를 BTN_Close로 접으면 마우스 드래그나 WASD/방향키로 맵을 둘러볼 수 있다.
     /// 플레이어와 기획서는 씬에서 알아서 찾는다 (리트로 플레이어가 새로 생겨도 다시 찾는다).
     /// </summary>
     [RequireComponent(typeof(Camera))]
@@ -24,7 +24,11 @@ namespace CoffeeSpec.Cameras
         [Tooltip("스프라이트의 Pixels Per Unit. 카메라를 이 픽셀 격자에 맞춰 세워서 화면이 일렁이지 않게 한다. 0이면 맞추지 않는다")]
         [SerializeField, Min(0)] private int _pixelsPerUnit = 32;
 
-        [Header("스테이지 보기 (드래그)")]
+        [Header("스테이지 보기 (드래그 / 키보드)")]
+        [Tooltip("WASD/방향키로 움직이는 속도 (초당 월드 유닛)")]
+        [SerializeField, Min(0f)] private float _keyboardPanSpeed = 10f;
+        [Tooltip("Shift를 누르고 있을 때 속도 배수")]
+        [SerializeField, Min(1f)] private float _keyboardFastMultiplier = 2f;
         [Tooltip("켜면 드래그로 레벨 밖까지 나가지 못하게 막는다")]
         [SerializeField] private bool _clampToLevel = true;
         [Tooltip("드래그 범위를 계산할 레벨 루트 오브젝트 이름")]
@@ -128,9 +132,34 @@ namespace CoffeeSpec.Cameras
                 _lastMousePosition = mousePosition;
             }
 
+            // 마우스로 끄는 중이 아니면 키보드로 움직인다 (미리보기 중에는 플레이어 입력이 막혀 있어 겹치지 않는다)
+            if (!_panning)
+            {
+                _smoothPosition += ReadKeyboardPan() * Time.unscaledDeltaTime;
+            }
+
             _smoothPosition = ClampToPanBounds(_smoothPosition);
             _velocity = Vector3.zero;
             transform.position = SnapToPixel(_smoothPosition);
+        }
+
+        // WASD/방향키 입력을 이번 프레임의 이동 속도로 바꾼다. 대각선도 같은 속도가 되게 정규화한다
+        private Vector3 ReadKeyboardPan()
+        {
+            Keyboard kb = Keyboard.current;
+            if (kb == null) return Vector3.zero;
+
+            Vector2 dir = Vector2.zero;
+            if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) dir.x += 1f;
+            if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) dir.x -= 1f;
+            if (kb.wKey.isPressed || kb.upArrowKey.isPressed) dir.y += 1f;
+            if (kb.sKey.isPressed || kb.downArrowKey.isPressed) dir.y -= 1f;
+            if (dir == Vector2.zero) return Vector3.zero;
+
+            float speed = _keyboardPanSpeed;
+            if (kb.leftShiftKey.isPressed || kb.rightShiftKey.isPressed) speed *= _keyboardFastMultiplier;
+            dir = dir.normalized * speed;
+            return new Vector3(dir.x, dir.y, 0f);
         }
 
         private static bool IsPointerOverUI()

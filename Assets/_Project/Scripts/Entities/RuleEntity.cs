@@ -27,6 +27,8 @@ namespace CoffeeSpec.Entities
         [SerializeField, Min(0.01f)] private float _sinkTolerance = 0.03f;
         [Tooltip("켜면 플레이어 공격에 맞았을 때 사라진다(숨김). 다른 객체가 이 모습으로 변신하면 이 설정도 따라간다")]
         [SerializeField] private bool _removedByAttack;
+        [Tooltip("켜면 Move로 움직일 때 가는 방향을 보도록 좌우를 뒤집는다. 스프라이트는 오른쪽을 보게 그려야 한다 (플레이어는 따로 처리)")]
+        [SerializeField] private bool _faceMoveDirection = true;
 
         [Header("날기 (Fly)")]
         [Tooltip("날기 시작할 때 발밑 바닥에서 띄울 높이 범위(칸). 대상마다 이 안에서 랜덤으로 고른다")]
@@ -431,6 +433,13 @@ namespace CoffeeSpec.Entities
             if (otherEntity != null && otherEntity != this) _manager.ReportContact(this, otherEntity);
         }
 
+        // 가는 방향을 보게 한다. 멈춘 방향(0)이면 보던 쪽을 그대로 둔다
+        private void FaceDirection(float x)
+        {
+            if (!_faceMoveDirection || IsPlayer || x == 0f) return;
+            _renderer.flipX = x < 0f;
+        }
+
         public void OnBeforeSerialize() { }
 
         public void OnAfterDeserialize()
@@ -454,6 +463,7 @@ namespace CoffeeSpec.Entities
             {
                 _direction = SideDirections[Random.Range(0, SideDirections.Length)];
                 _timer = _directionInterval;
+                FaceDirection(_direction.x);
             }
 
             // 플레이어 입력이 우선이라 조작 중에는 속도를 건드리지 않는다

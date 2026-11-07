@@ -41,6 +41,9 @@ namespace CoffeeSpec.Player
         [SerializeField] private float _attackOffset = 0.8f;
         [SerializeField] private float _attackDuration = 0.1f;
         [SerializeField] private float _attackCooldown = 0.3f;
+        [Tooltip("공격 판정 범위를 게임 화면에 반투명 색으로 보여준다")]
+        [SerializeField] private bool _showAttackHitbox = true;
+        [SerializeField] private Color _attackHitboxColor = new(1f, 0f, 0f, 0.35f);
 
         private Rigidbody2D _rigidbody;
         private Collider2D _collider;
@@ -229,6 +232,7 @@ namespace CoffeeSpec.Player
 
             var hitbox = go.AddComponent<AttackHitbox>();
             hitbox.Init(gameObject, _attackDuration);
+            if (_showAttackHitbox) hitbox.ShowVisual(_attackHitboxColor);
         }
 
         private void SetFacing(int dir)
