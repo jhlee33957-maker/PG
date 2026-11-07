@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: bdbbb87b43399994e8b5fbbfd6bbb6e2
+guid: f7f7e91790f337e43ab5a91cb61d44e2
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: -77393866984553015
-    second: Proto_Enemy_0
+      213: 4279852420049406163
+    second: Enemy_red_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -77,7 +77,7 @@ TextureImporter:
     maxTextureSize: 2048
     resizeAlgorithm: 0
     textureFormat: -1
-    textureCompression: 0
+    textureCompression: 1
     compressionQuality: 50
     crunchedCompression: 0
     allowsAlphaSplitting: 0
@@ -115,13 +115,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Proto_Enemy_0
+      name: Enemy_red_0
       rect:
         serializedVersion: 2
-        x: 0
+        x: 2
         y: 0
-        width: 32
-        height: 16
+        width: 28
+        height: 24
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -130,8 +130,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: 9c5879220ba0deef0800000000000000
-      internalID: -77393866984553015
+      spriteID: 3d80424b917156b30800000000000000
+      internalID: 4279852420049406163
       vertices: []
       indices: 
       edges: []
@@ -150,7 +150,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Proto_Enemy_0: -77393866984553015
+      Enemy_red_0: 4279852420049406163
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
