@@ -6,7 +6,7 @@ namespace CoffeeSpec.Spec
 {
     /// <summary>
     /// StageSpec 줄 목록을 인스펙터에서 드롭다운(줄 종류, 문장 틀, 처음 단어)으로 고르게 하는 표시용 속성.
-    /// 저장 형식("NounIsNoun, Person _")은 그대로라 게임 코드에는 영향이 없다. 그리는 쪽은 Editor/StageSpecLineDrawer.
+    /// 저장 형식("NounIsNoun, !Person _")은 글자 그대로라 게임 코드에는 영향이 없다. 그리는 쪽은 Editor/StageSpecLineDrawer.
     /// </summary>
     public class StageSpecLineAttribute : PropertyAttribute { }
 
@@ -18,6 +18,7 @@ namespace CoffeeSpec.Spec
     ///   - 문장 틀 Id   : SentencesCSV.csv의 Id (예: NounIsNoun → "{0}은(는) {1}이다")
     ///   - 문장 틀 Id, 단어 단어 : 쉼표 뒤에 빈칸 순서대로 처음 채워 둘 단어를 띄어 쓴다. 비워 둘 빈칸은 "_"
     ///                       (예: "NounIsNoun, Person _" → 첫 빈칸에 Person, 둘째 빈칸은 빈칸). 쉼표가 없으면 모두 빈칸
+    ///                       단어 앞에 "!"를 붙이면 고정 단어: 플레이어가 옮길 수 없고 회색으로 보인다 (예: "NounIsNoun, !Person _")
     ///   - "//" 로 시작 : 주석 줄. 코드 에디터의 주석처럼 그대로 보여 준다 (예: "// Object & Role Definition")
     ///   - 빈 칸        : 빈 줄
     /// 단어 묶음: WordId 목록. 모든 빈칸이 같이 쓰며, 어떤 빈칸에든 어떤 단어든 넣을 수 있다.
@@ -29,6 +30,9 @@ namespace CoffeeSpec.Spec
         public const string CommentPrefix = "//";
         public const char PresetSeparator = ',';
         public const string EmptyPresetToken = "_";
+        public const char LockedPresetPrefix = '!';
+        /// <summary>새로 만든 StageSpec에 기본으로 넣는 문장 틀 CSV 경로.</summary>
+        public const string DefaultSentenceCsvPath = "Assets/_Project/Data/SentencesCSV.csv";
 
         public enum LineKind
         {
@@ -47,13 +51,23 @@ namespace CoffeeSpec.Spec
             public SentenceTemplate Template { get; }
             /// <summary>문장 줄에서 빈칸 순서대로 처음 채워 둘 단어. 비워 둘 빈칸은 빈 WordId. 적지 않았으면 빈 목록.</summary>
             public IReadOnlyList<WordId> Preset { get; }
+            /// <summary>Preset과 같은 순서로, 그 단어를 고정했는지. 고정 단어는 플레이어가 옮길 수 없다.</summary>
+            public IReadOnlyList<bool> Locked { get; }
 
-            public Line(LineKind kind, string comment, SentenceTemplate template, IReadOnlyList<WordId> preset = null)
+            public Line(LineKind kind, string comment, SentenceTemplate template,
+                        IReadOnlyList<WordId> preset = null, IReadOnlyList<bool> locked = null)
             {
                 Kind = kind;
                 Comment = comment;
                 Template = template;
                 Preset = preset ?? System.Array.Empty<WordId>();
+                Locked = locked ?? System.Array.Empty<bool>();
+            }
+
+            /// <summary>slot번째 처음 단어가 고정인지. 빈칸이면 고정할 단어가 없으므로 false.</summary>
+            public bool IsLocked(int slot)
+            {
+                return slot < Preset.Count && slot < Locked.Count && !Preset[slot].IsEmpty && Locked[slot];
             }
         }
 
@@ -95,10 +109,10 @@ namespace CoffeeSpec.Spec
                 }
                 else
                 {
-                    SplitSentenceEntry(entry, out string templateId, out List<WordId> preset);
+                    SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out List<bool> locked);
                     if (templates.TryGetValue(templateId, out SentenceTemplate template))
                     {
-                        result.Add(new Line(LineKind.Sentence, null, template, preset));
+                        result.Add(new Line(LineKind.Sentence, null, template, preset, locked));
                     }
                     else
                     {
@@ -112,10 +126,12 @@ namespace CoffeeSpec.Spec
         /// <summary>
         /// "NounIsNoun, Person _" 를 문장 틀 Id와 처음 단어 목록으로 나눈다.
         /// 쉼표가 없으면 단어 목록은 비어 있다 (모든 빈칸이 빈칸으로 시작). "_"는 빈 WordId.
+        /// 단어 앞의 "!"는 고정 표시라 떼어 내고 locked에 따로 담는다.
         /// </summary>
-        private static void SplitSentenceEntry(string entry, out string templateId, out List<WordId> preset)
+        private static void SplitSentenceEntry(string entry, out string templateId, out List<WordId> preset, out List<bool> locked)
         {
             preset = new List<WordId>();
+            locked = new List<bool>();
             int comma = entry.IndexOf(PresetSeparator);
             if (comma < 0)
             {
@@ -127,11 +143,28 @@ namespace CoffeeSpec.Spec
             string[] tokens = entry.Substring(comma + 1).Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
             foreach (string token in tokens)
             {
-                preset.Add(token == EmptyPresetToken ? default : new WordId(token));
+                bool isLocked = token.Length > 1 && token[0] == LockedPresetPrefix;
+                string word = isLocked ? token.Substring(1) : token;
+                preset.Add(word == EmptyPresetToken ? default : new WordId(word));
+                locked.Add(isLocked);
             }
         }
 
 #if UNITY_EDITOR
+        // 에셋을 새로 만들거나 인스펙터에서 Reset하면 문장 틀 CSV를 기본 경로에서 채운다
+        private void Reset()
+        {
+            if (_sentenceCsv != null)
+            {
+                return;
+            }
+            _sentenceCsv = UnityEditor.AssetDatabase.LoadAssetAtPath<TextAsset>(DefaultSentenceCsvPath);
+            if (_sentenceCsv == null)
+            {
+                Debug.LogWarning($"[StageSpec] 기본 문장 틀 CSV를 찾지 못했습니다: {DefaultSentenceCsvPath}", this);
+            }
+        }
+
         // 데이터를 입력하는 순간 실수를 알려 준다
         private void OnValidate()
         {
@@ -152,7 +185,7 @@ namespace CoffeeSpec.Spec
                     continue;
                 }
 
-                SplitSentenceEntry(entry, out string templateId, out List<WordId> preset);
+                SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out _);
                 if (!templates.TryGetValue(templateId, out SentenceTemplate template))
                 {
                     Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{templateId}'", this);

@@ -2,3 +2,4 @@
 NounIsNoun,{0}은(는) {1}{1:Noun=이다},Noun|Noun/Verb
 NounIfNounIsNoun,{0}은(는) {1@If}면 {2}{2:Noun=이다},Noun|Noun/Verb|Noun/Verb
 IfNounIsNoun,{0@if}면 {1}{1:Noun=이다},Noun/Verb|Noun/Verb
+NounTouchNoun,{0}는 만지면 {1@ac}{1:Noun= 된다},Noun|Noun/Verb
