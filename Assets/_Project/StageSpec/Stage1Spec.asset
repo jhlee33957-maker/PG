@@ -16,8 +16,11 @@ MonoBehaviour:
   _templateIds:
   - //Hello World!
   - 
-  - NounIsNoun, Exit Move
+  - NounIsNoun, Person Control
+  - NounIsNoun, Exit Win
   - NounIsNoun, Exit Fly
+  - IfNounIsNoun, Fly Move
+  - NounIfNounIsNoun, Person Fly Die
   _wordPool:
   - _value: Pigeon
   - _value: Pigeon
@@ -25,4 +28,11 @@ MonoBehaviour:
   - _value: Fly
   - _value: Exit
   - _value: Exit
+  - _value: Person
+  - _value: Control
+  - _value: Win
+  - _value: Exit
+  - _value: Fly
+  - _value: Fly
+  - _value: Die
   - _value: Person

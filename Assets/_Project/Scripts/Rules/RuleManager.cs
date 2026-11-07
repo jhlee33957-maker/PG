@@ -12,7 +12,15 @@ namespace CoffeeSpec.Rules
     /// - 명사|명사: 앞 명사 대상이 뒤 명사로 영구 변신 (태그와 모습)
     /// - 명사|Move: 명사 대상이 문장이 있는 동안 랜덤 이동
     /// - 명사|Fly: 명사 대상이 문장이 있는 동안 랜덤 높이로 떠서 둥실거림
-    /// - 접촉: 플레이어가 Exit 태그 객체에 닿으면 클리어
+    /// - 명사|Control: 명사 대상이 문장이 있는 동안 플레이어 조작을 받음 (여럿이면 같이 움직임)
+    /// - 명사|Win: 문장이 있는 동안 명사 대상이 클리어 지점이 됨
+    /// - 조건 문장(문장 틀에 {n@If} 빈칸이 있는 문장. 예: 사람은 날면 비둘기이다):
+    ///   주어 대상 중 조건이 맞는 대상에게만 나머지 단어의 효과를 준다.
+    ///   동사 조건은 그 대상이 지금 그 상태(Move/Fly/Control/Win)일 때, 명사 조건은 지금 그 태그일 때 참.
+    ///   조건 재료(태그, 상태)는 모두 이 매니저가 바꾸므로 매 프레임 확인하지 않고,
+    ///   문장이나 대상이 바뀌어 다시 적용할 때만 결과가 더 안 바뀔 때까지 계산한다.
+    ///   조건으로 생긴 변신도 다른 변신처럼 영구다.
+    /// - 접촉: 조종 대상이 Win을 받은 대상에 닿으면 클리어
     /// 실행 중 인스펙터에서 문장 목록을 바꾸면 전체 규칙을 다시 적용한다.
     /// </summary>
     public class RuleManager : MonoBehaviour
@@ -57,18 +65,30 @@ namespace CoffeeSpec.Rules
         private Dictionary<string, SentenceTemplate> _templates = new();
         private readonly List<Sentence> _sentences = new();
         private readonly List<RuleEntity> _entities = new();
+        // Win 문장을 받은 대상. 조종 대상이 닿으면 클리어된다
+        private readonly HashSet<RuleEntity> _winTargets = new();
         private bool _started;
         private bool _rebuildPending;
         private bool _cleared;
 
-        private static readonly WordId Exit = new("Exit");
+
         private static readonly WordId Fly = new("Fly");
+        private static readonly WordId Control = new("Control");
+        private static readonly WordId Win = new("Win");
+        private static readonly WordId Die = new("Die");
 
         /// <summary>스테이지를 클리어했을 때 알린다. 저장, 다음 스테이지 이동 등은 여기에 구독한다.</summary>
         public event Action Cleared;
 
         public IReadOnlyList<Sentence> Sentences => _sentences;
         public IReadOnlyCollection<string> TemplateIds => _templates.Keys;
+
+        /// <summary>지금 조종받는 대상 전부. 카메라가 이 대상들을 한 화면에 담는다.</summary>
+        public IEnumerable<RuleEntity> GetControlled()
+        {
+            foreach (var e in _entities)
+                if (e != null && !e.IsRemoved && e.IsPlayer) yield return e;
+        }
 
         private void Awake()
         {
@@ -183,6 +203,7 @@ namespace CoffeeSpec.Rules
             Rebuild();
         }
 
+
         private void LoadTemplates()
         {
             _templates = _sentenceCsv != null
@@ -229,14 +250,72 @@ namespace CoffeeSpec.Rules
         {
             foreach (var e in _entities) if (e != null) e.ResetState();
             // 변신을 먼저 해야 '사람은 비둘기다 + 비둘기는 움직인다'에서 바뀐 사람도 움직인다
-            foreach (var s in _sentences) if (IsTransform(s)) ApplyTransform(s);
-            foreach (var s in _sentences) if (!IsTransform(s)) ApplyEffect(s);
+            // 조건 변신이 일어나면 바뀐 태그로 변신·효과 문장을 처음부터 다시 따진다 (변신은 영구라 반드시 끝난다)
+            for (int round = 0; round < 8; round++)
+            {
+                foreach (var s in _sentences) if (IsTransform(s)) ApplyTransform(s);
+                if (!CollectEffects()) break;
+            }
+            ApplyEffects();
+        }
+
+        // 지속 효과마다 받아야 할 대상을 모두 모은 뒤 한 번에 켜고 끈다.
+        // 조건 계산 중에는 대상을 건드리지 않고 집합에만 모아서, 중간 상태로 켰다 껐다 하지 않는다
+        private readonly HashSet<RuleEntity> _moveSet = new();
+        private readonly HashSet<RuleEntity> _flySet = new();
+        private readonly HashSet<RuleEntity> _controlSet = new();
+        private readonly HashSet<RuleEntity> _dieSet = new();
+
+        private bool _conditionalTransformed;
+
+        /// <returns>조건 문장으로 변신이 일어났으면 true</returns>
+        private bool CollectEffects()
+        {
+            _conditionalTransformed = false;
+            _moveSet.Clear();
+            _flySet.Clear();
+            _controlSet.Clear();
+            _dieSet.Clear();
+            _winTargets.Clear();
+
+            foreach (var s in _sentences)
+                if (!IsTransform(s) && ConditionSlot(s) < 0) ApplyEffect(s);
+
+            // 조건이 다른 조건 문장의 결과에 기댈 수 있어서(날면 움직인다 + 움직이면 조종) 더 바뀌지 않을 때까지 몇 번 돈다
+            for (int pass = 0; pass < 4; pass++)
+            {
+                bool changed = false;
+                foreach (var s in _sentences)
+                    if (ConditionSlot(s) >= 0) changed |= ApplyConditional(s);
+                if (!changed) break;
+            }
+            return _conditionalTransformed;
+        }
+
+        // 모은 효과를 대상에 반영한다. 상태가 그대로인 대상은 각 Set 함수가 건드리지 않는다
+        private void ApplyEffects()
+        {
+            // 사라지는 대상이 있으면 목록 순회 중에 상태가 바뀌므로 먼저 복사한다
+            foreach (var e in new List<RuleEntity>(_entities))
+            {
+                if (e == null || e.IsRemoved) continue;
+                // Die: 공격받았을 때처럼 숨기고 상호작용을 끈다. 영구라 문장이 빠져도 돌아오지 않는다
+                if (_dieSet.Contains(e))
+                {
+                    e.Remove();
+                    continue;
+                }
+                e.SetRandomMove(_moveSet.Contains(e));
+                e.SetFly(_flySet.Contains(e));
+                // 조종은 껐다 켜면 움직임이 끊기므로 바뀌는 대상만 켜고 끈다
+                e.SetControl(_controlSet.Contains(e));
+            }
         }
 
         // ---- 태그를 보고 효과를 정하는 부분. 새 효과는 여기에 추가한다 ----
 
         private static bool IsTransform(Sentence s) =>
-            s.Words.Count == 2 &&
+            s.Words.Count == 2 && ConditionSlot(s) < 0 &&
             WordTags.Is(s.Words[0], WordType.Noun) && WordTags.Is(s.Words[1], WordType.Noun);
 
         private void ApplyEffect(Sentence s)
@@ -245,12 +324,84 @@ namespace CoffeeSpec.Rules
             var subject = s.Words[0];
 
             for (int i = 1; i < s.Words.Count; i++)
+                foreach (var e in GetEntities(subject)) AddEffect(e, s.Words[i]);
+        }
+
+        // 효과가 연결된 동사만 여기서 처리한다. 새 동사 효과는 여기와 HasEffect에 추가한다
+        private bool AddEffect(RuleEntity e, WordId verb)
+        {
+            if (verb == WordId.Move) return _moveSet.Add(e);
+            if (verb == Fly) return _flySet.Add(e);
+            if (verb == Control) return _controlSet.Add(e);
+            if (verb == Win) return _winTargets.Add(e);
+            if (verb == Die) return _dieSet.Add(e);
+            return false;
+        }
+
+        // 동사 조건: 그 대상이 지금 그 상태인지 (이번에 모으는 중인 효과 기준)
+        private bool HasEffect(RuleEntity e, WordId verb)
+        {
+            if (verb == WordId.Move) return _moveSet.Contains(e);
+            if (verb == Fly) return _flySet.Contains(e);
+            if (verb == Control) return _controlSet.Contains(e);
+            if (verb == Win) return _winTargets.Contains(e);
+            if (verb == Die) return _dieSet.Contains(e);
+            return false;
+        }
+
+        // 문장 틀에서 {n@If}로 쓰인 빈칸 번호. 조건 문장이 아니면 -1
+        private static int ConditionSlot(Sentence s)
+        {
+            if (s.Template == null) return -1;
+            for (int i = 0; i < s.Words.Count; i++)
+                if (string.Equals(s.Template.SlotForm(i), WordTags.IfForm, StringComparison.OrdinalIgnoreCase)) return i;
+            return -1;
+        }
+
+        private static bool IsConditionMet(RuleEntity e, WordId condition, RuleManager self) =>
+            WordTags.Is(condition, WordType.Noun) ? e.Id == condition : self.HasEffect(e, condition);
+
+        /// <summary>
+        /// 조건 칸이 첫 칸이 아니면 첫 칸(명사)이 주어다: 사람은 날면 비둘기이다.
+        /// 조건 칸이 첫 칸이면 주어가 없어서 조건이 맞는 모든 대상이 받는다: 날면 움직인다.
+        /// </summary>
+        /// <returns>새로 효과를 받은 대상이 있거나 변신이 일어났으면 true</returns>
+        private bool ApplyConditional(Sentence s)
+        {
+            int condSlot = ConditionSlot(s);
+            bool hasSubject = condSlot > 0;
+            if (hasSubject && !WordTags.Is(s.Words[0], WordType.Noun)) return false;
+            WordId subject = hasSubject ? s.Words[0] : default, condition = s.Words[condSlot];
+            int firstResult = hasSubject ? 1 : 0;
+            bool changed = false;
+
+            // 변신하면 목록이 달라지므로 먼저 복사한다
+            foreach (var e in new List<RuleEntity>(_entities))
             {
-                if (s.Words[i] == WordId.Move) // 효과가 연결된 단어만 여기서 처리한다
-                    foreach (var e in GetEntities(subject)) e.SetRandomMove(true);
-                else if (s.Words[i] == Fly)
-                    foreach (var e in GetEntities(subject)) e.SetFly(true);
+                if (e == null || e.IsRemoved) continue;
+                if (hasSubject && e.Id != subject) continue;
+                if (!IsConditionMet(e, condition, this)) continue;
+
+                for (int i = firstResult; i < s.Words.Count; i++)
+                {
+                    if (i == condSlot) continue;
+                    var word = s.Words[i];
+                    if (WordTags.Is(word, WordType.Noun))
+                    {
+                        if (e.Id == word) continue;
+                        var source = FindOriginalEntity(word);
+                        if (source == null) continue;
+                        e.TransformInto(word, source);
+                        _conditionalTransformed = true;
+                        changed = true;
+                    }
+                    else
+                    {
+                        changed |= AddEffect(e, word);
+                    }
+                }
             }
+            return changed;
         }
 
         private void ApplyTransform(Sentence s)
@@ -275,11 +426,12 @@ namespace CoffeeSpec.Rules
             // 기획서가 열려 있는 동안(미리보기 포함)은 클리어하지 않는다
             if (_specPanel != null && _specPanel.IsOpen) return;
             if (a.IsRemoved || b.IsRemoved) return;
-            if (IsExitContact(a, b) || IsExitContact(b, a)) Clear();
+            if (IsWinContact(a, b) || IsWinContact(b, a)) Clear();
         }
 
-        private static bool IsExitContact(RuleEntity player, RuleEntity other) =>
-            player.IsPlayer && other.Id == Exit;
+        // 조종 대상이 Win을 받은 대상에 닿았는지
+        private bool IsWinContact(RuleEntity player, RuleEntity other) =>
+            player.IsPlayer && _winTargets.Contains(other);
 
         private void Clear()
         {

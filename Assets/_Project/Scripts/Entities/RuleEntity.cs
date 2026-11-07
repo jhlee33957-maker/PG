@@ -29,6 +29,8 @@ namespace CoffeeSpec.Entities
         [SerializeField] private bool _removedByAttack;
         [Tooltip("켜면 Move로 움직일 때 가는 방향을 보도록 좌우를 뒤집는다. 스프라이트는 오른쪽을 보게 그려야 한다 (플레이어는 따로 처리)")]
         [SerializeField] private bool _faceMoveDirection = true;
+        [Tooltip("중력이 없는 모습(벽 등)이 조종(Control)을 받았을 때 대신 쓸 중력. 원래 중력이 있으면 그 값을 쓴다")]
+        [SerializeField, Min(0f)] private float _controlGravity = 1.5f;
 
         [Header("날기 (Fly)")]
         [Tooltip("날기 시작할 때 발밑 바닥에서 띄울 높이 범위(칸). 대상마다 이 안에서 랜덤으로 고른다")]
@@ -75,7 +77,8 @@ namespace CoffeeSpec.Entities
         private float _bobPhase;      // 대상마다 다르게 둥실거리도록 하는 시작 박자
         private float _flyTime;
         private int _flyOffFrame = -1; // 날기가 꺼진 프레임. 같은 프레임에 다시 켜지면 높이를 새로 고르지 않는다
-        private bool _freezeRotationBeforeFly; // Static 대상은 회전이 안 막혀 있을 수 있어서 나는 동안만 막고 끝나면 되돌린다
+        private bool _baseFreezeRotation; // 지금 모습(프리팹) 설정의 회전 고정. Static 대상은 안 막혀 있을 수 있어서 날거나 조종받는 동안만 막는다
+        private bool _controlled;         // 문장으로 조종(Control)을 받는 중
 
         // 서로 밀지 못하게: 스스로 움직이지 않는 동안은 가로 위치를 잠가서 부딪혀도 밀리지 않는다
         private const float StopSpeed = 0.05f;
@@ -94,8 +97,10 @@ namespace CoffeeSpec.Entities
         public bool IsFlying => _flying;
         /// <summary>플레이어가 직접 조작 중이면 true. 이때는 랜덤 이동이 속도를 덮어쓰지 않는다.</summary>
         public bool InputOverride { get; set; }
-        /// <summary>플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
-        public bool IsPlayer { get; private set; }
+        /// <summary>문장으로 조종(Control)을 받아 플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
+        public bool IsPlayer => _controlled;
+        /// <summary>지금 상태에서 써야 할 중력. 나는 중이면 0, 중력 없는 모습이 조종받으면 조종용 중력.</summary>
+        public float Gravity => _flying ? 0f : (_controlled && _defaultGravity <= 0f ? _controlGravity : _defaultGravity);
         /// <summary>공격으로 사라진(숨겨진) 상태. 규칙과 접촉에서는 빠지지만 변신 원본으로는 계속 쓰인다.</summary>
         public bool IsRemoved { get; private set; }
 
@@ -114,11 +119,14 @@ namespace CoffeeSpec.Entities
             _originalIsTrigger = _collider != null && _collider.isTrigger;
             _originalConstraints = _rigidbody.constraints;
             _baseFreezeX = (_originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
+            _baseFreezeRotation = (_originalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
             _originalBodyType = _rigidbody.bodyType;
             _bodyType = _originalBodyType;
             _originalRemovedByAttack = _removedByAttack;
             _manager = FindAnyObjectByType<RuleManager>();
-            IsPlayer = GetComponent<PlatformerPlayer>() != null;
+            // 조종은 문장으로만 받는다. 프리팹에 조작 스크립트가 남아 있어도 문장이 줄 때까지 꺼 둔다
+            var presetPlayer = GetComponent<PlatformerPlayer>();
+            if (presetPlayer != null) presetPlayer.enabled = false;
             if (_collider is BoxCollider2D box) RoundCorners(box, box.size);
             ApplyNoFriction();
             // 빠르게 떨어지면 한 프레임 사이에 타일 속으로 들어갔다가 천천히 밀려 나온다. 연속 충돌 검사로 착지 순간에 막는다
@@ -270,17 +278,11 @@ namespace CoffeeSpec.Entities
             _defaultGravity = source._defaultGravity;
             // 공격에 사라지는 성질도 새 모습을 따라간다
             _removedByAttack = source._originalRemovedByAttack;
-            if (_flying)
-            {
-                // 나는 중에는 중력 0, 회전 고정을 유지하고 날기가 끝날 때 새 설정으로 돌아가게 한다
-                _freezeRotationBeforeFly = (source._originalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
-                _rigidbody.constraints = source._originalConstraints | RigidbodyConstraints2D.FreezeRotation;
-            }
-            else
-            {
-                _rigidbody.gravityScale = _defaultGravity;
-                _rigidbody.constraints = source._originalConstraints;
-            }
+            // 나는 중이거나 조종받는 중이면 중력과 회전 고정은 그 상태에 맞춰 두고, 끝날 때 새 설정으로 돌아간다
+            _rigidbody.constraints = source._originalConstraints;
+            _baseFreezeRotation = (source._originalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
+            ApplyGravity();
+            ApplyRotationLock();
             _baseFreezeX = (source._originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
             UpdatePushLock();
         }
@@ -309,14 +311,46 @@ namespace CoffeeSpec.Entities
             if (next != current) _rigidbody.constraints = next;
         }
 
-        // 지금 모습의 바디 타입(프리팹 기준)을 적용한다. 나는 중에는 Static 모습이어도 Dynamic으로 둔다
+        // 지금 모습의 바디 타입(프리팹 기준)을 적용한다. 나는 중이거나 조종받는 중에는 Static 모습이어도 Dynamic으로 둔다
         private void ApplyBodyType()
         {
-            var type = _flying ? RigidbodyType2D.Dynamic : _bodyType;
+            var type = _flying || _controlled ? RigidbodyType2D.Dynamic : _bodyType;
             if (_rigidbody.bodyType == type) return;
             _rigidbody.bodyType = type;
             // Static으로 굳는 순간 남아 있던 속도 때문에 튀지 않게 한다
             if (type == RigidbodyType2D.Dynamic) _rigidbody.linearVelocity = Vector2.zero;
+        }
+
+        private void ApplyGravity() => _rigidbody.gravityScale = Gravity;
+
+        // 날거나 조종받는 동안은 굴러가지 않게 회전을 막고, 끝나면 모습 설정대로 되돌린다
+        private void ApplyRotationLock() => _rigidbody.freezeRotation = _baseFreezeRotation || _flying || _controlled;
+
+        /// <summary>
+        /// 조종(Control): 켜면 조작 스크립트(PlatformerPlayer)를 붙여 플레이어가 움직이게 하고, 끄면 그 스크립트를 꺼 둔다.
+        /// Static 대상(벽, 출구)도 조종받는 동안은 Dynamic으로 풀리고, 중력이 없는 모습이면 조종용 중력을 쓴다.
+        /// </summary>
+        public void SetControl(bool on)
+        {
+            if (_controlled == on) return;
+            _controlled = on;
+            var player = GetComponent<PlatformerPlayer>();
+            if (on)
+            {
+                ApplyBodyType();
+                ApplyRotationLock();
+                ApplyGravity();
+                if (player == null) player = gameObject.AddComponent<PlatformerPlayer>();
+                player.enabled = true;
+                return;
+            }
+
+            if (player != null) player.enabled = false;
+            InputOverride = false;
+            SetSelfDriven(false);
+            ApplyGravity();
+            ApplyRotationLock();
+            ApplyBodyType();
         }
 
         // 판정이 그림과 어긋나지 않도록 콜라이더를 지금 그려지는 영역(로컬 기준)에 맞춘다
@@ -354,17 +388,16 @@ namespace CoffeeSpec.Entities
             _flying = on;
             if (!on)
             {
-                _rigidbody.gravityScale = _defaultGravity;
-                _rigidbody.freezeRotation = _freezeRotationBeforeFly;
+                ApplyGravity();
+                ApplyRotationLock();
                 _flyOffFrame = Time.frameCount;
                 ApplyBodyType();
                 return;
             }
 
             ApplyBodyType();
-            _freezeRotationBeforeFly = _rigidbody.freezeRotation;
-            _rigidbody.freezeRotation = true;
-            _rigidbody.gravityScale = 0f;
+            ApplyRotationLock();
+            ApplyGravity();
             _wasGrounded = false;
             // 문장을 다시 적용할 때는 같은 프레임에 껐다 켜진다. 이때는 높이를 새로 고르지 않고 하던 대로 둥실거린다
             if (_flyOffFrame == Time.frameCount) return;
@@ -406,16 +439,28 @@ namespace CoffeeSpec.Entities
         public bool TryRemoveByAttack()
         {
             if (!_removedByAttack || IsRemoved || IsPlayer) return false;
+            Remove();
+            return true;
+        }
+
+        /// <summary>
+        /// 화면에서 숨기고 충돌·물리를 꺼서 더 이상 상호작용하지 않게 한다. 공격과 Die 문장이 같이 쓴다.
+        /// 지우지 않으므로 변신 원본으로는 계속 쓸 수 있고, 레벨을 다시 깔면 돌아온다.
+        /// </summary>
+        public void Remove()
+        {
+            if (IsRemoved) return;
             IsRemoved = true;
             ResetState();
+            SetControl(false);
             _renderer.enabled = false;
             foreach (var col in GetComponents<Collider2D>()) col.enabled = false;
             _rigidbody.linearVelocity = Vector2.zero;
             _rigidbody.simulated = false;
-            return true;
         }
 
-        // 문장을 다시 적용하기 전에 지속 효과(이동, 날기)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다
+        // 문장을 다시 적용하기 전에 지속 효과(이동, 날기)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다.
+        // 조종은 껐다 켜면 속도와 대쉬가 끊기므로 여기서 끄지 않고 RuleManager가 다시 적용할 때 맞춘다
         public void ResetState()
         {
             SetRandomMove(false);

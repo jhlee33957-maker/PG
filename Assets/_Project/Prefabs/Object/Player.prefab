@@ -13,7 +13,6 @@ GameObject:
   - component: {fileID: 4663621810156582612}
   - component: {fileID: 5112394632848080477}
   - component: {fileID: 4049721007065478937}
-  - component: {fileID: 7148157497568462069}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -143,6 +142,8 @@ MonoBehaviour:
   _colliderCornerRadius: 0.02
   _groundSnapDistance: 0.1
   _sinkTolerance: 0.03
+  _removedByAttack: 0
+  _faceMoveDirection: 1
   _flyHeightRange: {x: 6, y: 8}
   _bobAmplitude: 0.15
   _bobPeriod: 2
@@ -195,31 +196,3 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 0.5, y: 1}
   m_EdgeRadius: 0
---- !u!114 &7148157497568462069
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1184300664040183953}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f46ce95a192b6134b96d179abf8af108, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Player.PlatformerPlayer
-  _moveSpeed: 6
-  _groundAcceleration: 80
-  _airAcceleration: 50
-  _jumpSpeed: 10.4
-  _coyoteTime: 0.1
-  _jumpBufferTime: 0.1
-  _jumpCutMultiplier: 0.5
-  _groundCheckDistance: 0.05
-  _dashSpeed: 16
-  _dashDuration: 0.12
-  _dashCooldown: 0.4
-  _sprintMultiplier: 1.4
-  _attackSize: {x: 1, y: 0.8}
-  _attackOffset: 0.8
-  _attackDuration: 0.1
-  _attackCooldown: 0.3

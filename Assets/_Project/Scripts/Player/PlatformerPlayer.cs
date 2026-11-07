@@ -7,7 +7,8 @@ namespace CoffeeSpec.Player
 {
     /// <summary>
     /// 2D 플랫포머 플레이어. 좌우 이동(A/D, ←/→), Z 점프, X 공격, C 대쉬.
-    /// 규칙 대상이 되도록 RuleEntity와 같이 붙여서 쓴다(태그는 RuleEntity에서 Person으로 지정).
+    /// 프리팹에 직접 붙이지 않는다. 문장으로 조종(Control)을 받은 RuleEntity가 붙이고, 조종이 빠지면 꺼 둔다.
+    /// 인스펙터 기본값은 아래 코드 값이 그대로 쓰인다.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(Collider2D), typeof(RuleEntity))]
     public class PlatformerPlayer : MonoBehaviour
@@ -19,7 +20,7 @@ namespace CoffeeSpec.Player
 
         [Header("점프 (Z)")]
         [Tooltip("점프 시작 속도. 높이는 속도의 제곱에 비례한다")]
-        [SerializeField] private float _jumpSpeed = 8.5f;
+        [SerializeField] private float _jumpSpeed = 10.4f;
         [Tooltip("발판에서 떨어진 직후에도 점프를 받아주는 시간(초)")]
         [SerializeField] private float _coyoteTime = 0.1f;
         [Tooltip("착지 직전에 누른 점프를 기억하는 시간(초)")]
@@ -63,7 +64,6 @@ namespace CoffeeSpec.Player
         private float _dashTimer;
         private float _dashCooldownTimer;
         private bool _airDashAvailable = true;
-        private float _defaultGravity;
 
         private float _attackCooldownTimer;
 
@@ -77,7 +77,6 @@ namespace CoffeeSpec.Player
             _collider = GetComponent<Collider2D>();
             _ruleEntity = GetComponent<RuleEntity>();
             _renderer = GetComponent<SpriteRenderer>();
-            _defaultGravity = _rigidbody.gravityScale;
         }
 
         private void Update()
@@ -208,8 +207,8 @@ namespace CoffeeSpec.Player
             _dashTimer -= dt;
             if (_dashTimer <= 0f)
             {
-                // 나는 중이면 중력을 다시 켜지 않는다 (켜면 떨어진다)
-                _rigidbody.gravityScale = _ruleEntity.IsFlying ? 0f : _defaultGravity;
+                // 나는 중이면 0, 중력 없는 모습이면 조종용 중력 등 지금 상태의 중력으로 돌린다
+                _rigidbody.gravityScale = _ruleEntity.Gravity;
                 // 대쉬가 끝나면 이동 속도로 줄여서 미끄러지지 않게 한다
                 _rigidbody.linearVelocity = new Vector2(_facing * _moveSpeed, 0f);
             }
@@ -243,8 +242,10 @@ namespace CoffeeSpec.Player
 
         private void OnDisable()
         {
-            if (_rigidbody != null) _rigidbody.gravityScale = _defaultGravity;
+            // 대쉬 중에 꺼지면 꺼 둔 중력을 지금 상태대로 돌려놓는다
+            if (_dashTimer > 0f && _rigidbody != null && _ruleEntity != null) _rigidbody.gravityScale = _ruleEntity.Gravity;
             _dashTimer = 0f;
+            _inputX = 0f;
         }
 
         private void OnDrawGizmosSelected()
