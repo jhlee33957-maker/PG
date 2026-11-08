@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
-using CoffeeSpec.Entities;
+using CoffeeSpec.Rules.Entities;
 using CoffeeSpec.UI;
 
 namespace CoffeeSpec.Player
@@ -110,7 +110,7 @@ namespace CoffeeSpec.Player
             if (kb.zKey.wasReleasedThisFrame) _jumpCutRequested = true;
             if (kb.cKey.wasPressedThisFrame) _dashRequested = true;
             _sprintHeld = kb.cKey.isPressed;
-            // 입력이 있을 때만 랜덤 이동을 눌러서, 손을 떼면 규칙 이동이 다시 이어지게 한다
+            // 입력이 있을 때만 Move 이동을 눌러서, 손을 떼면 규칙 이동이 다시 이어지게 한다
             _ruleEntity.InputOverride = x != 0f;
             if (kb.xKey.wasPressedThisFrame) TryAttack();
 
@@ -143,12 +143,12 @@ namespace CoffeeSpec.Player
 
             if (UpdateDash(dt))
             {
-                // 통과 판정 모습(출구 등)을 조종할 때 벽을 뚫지 않게 넣은 속도를 다시 막는다
+                // 대쉬 속도를 넣은 뒤에도 고정물을 뚫지 않게 제한한다.
                 _ruleEntity.BlockBySolids();
                 return;
             }
 
-            // 규칙으로 랜덤 이동 중이어도 입력이 있으면 플레이어가 우선한다. 입력이 없을 때만 RuleEntity에 맡긴다
+            // 규칙(Move)으로 이동 중이어도 입력이 있으면 플레이어가 우선한다. 입력이 없을 때만 RuleEntity에 맡긴다
             if (!_ruleEntity.IsRandomMoving || _inputX != 0f)
             {
                 float speed = _sprintHeld ? _moveSpeed * _sprintMultiplier : _moveSpeed;
@@ -170,8 +170,8 @@ namespace CoffeeSpec.Player
             _grounded = false;
             for (int i = 0; i < count; i++)
             {
-                if (_groundHits[i].collider.isTrigger) continue;
-                if (_groundHits[i].normal.y > 0.5f) { _grounded = true; break; }
+                // 쌓인 벽 블록의 이음매 윗면은 바닥이 아니다 (벽 타고 오르기 방지)
+                if (RuleEntity.IsGroundHit(_groundHits[i], _collider)) { _grounded = true; break; }
             }
         }
 

@@ -1,4 +1,4 @@
-﻿using CoffeeSpec.Entities;
+﻿using CoffeeSpec.Rules.Entities;
 using CoffeeSpec.Rules;
 using CoffeeSpec.UI;
 using UnityEngine;
@@ -52,6 +52,7 @@ namespace CoffeeSpec.Cameras
         private float _homeSize;       // 씬에 놓인 카메라 크기. 조종 대상이 하나일 때와 기획서 화면에서 쓴다
         private float _sizeVelocity;
         private SpecPanel _specPanel;
+        private bool _searchedSpecPanel;
 
         // 드래그 상태
         private bool _wasViewingStage;
@@ -71,7 +72,11 @@ namespace CoffeeSpec.Cameras
 
         private void LateUpdate()
         {
-            if (_specPanel == null) _specPanel = FindAnyObjectByType<SpecPanel>();
+            if (!_searchedSpecPanel)
+            {
+                _searchedSpecPanel = true;
+                _specPanel = FindAnyObjectByType<SpecPanel>();
+            }
 
             bool viewingStage = _specPanel != null && _specPanel.IsViewingStage;
             if (viewingStage && !_wasViewingStage)
@@ -122,7 +127,7 @@ namespace CoffeeSpec.Cameras
         private bool TryGetControlledBounds(out Bounds bounds)
         {
             bounds = default;
-            if (_ruleManager == null) _ruleManager = FindAnyObjectByType<RuleManager>();
+            if (_ruleManager == null) _ruleManager = RuleManager.Instance;
             if (_ruleManager == null) return false;
 
             bool any = false;

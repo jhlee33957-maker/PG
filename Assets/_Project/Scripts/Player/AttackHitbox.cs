@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using CoffeeSpec.Entities;
+using CoffeeSpec.Rules.Entities;
 
 namespace CoffeeSpec.Player
 {

@@ -43,6 +43,11 @@ namespace CoffeeSpec.Core
             }
 
             SceneFader fader = GetOrCreate();
+            if (fader == null || fader._canvasGroup == null || !fader.isActiveAndEnabled)
+            {
+                Debug.LogWarning("[SceneFader] 페이드 화면이 없어 씬 전환을 시작하지 못함");
+                return;
+            }
             if (fader._isLoading)
             {
                 return;
@@ -63,6 +68,11 @@ namespace CoffeeSpec.Core
             _instance = go.AddComponent<SceneFader>();
             _instance.BuildOverlay();
             return _instance;
+        }
+
+        private void OnDestroy()
+        {
+            if (_instance == this) _instance = null;
         }
 
         private void BuildOverlay()
@@ -93,20 +103,27 @@ namespace CoffeeSpec.Core
         private IEnumerator FadeAndLoad(string sceneName, float duration)
         {
             _isLoading = true;
-            _canvasGroup.blocksRaycasts = true;
-
-            yield return Fade(0f, 1f, duration);
-
-            AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName);
-            while (operation != null && !operation.isDone)
+            try
             {
-                yield return null;
+                if (_canvasGroup == null) yield break;
+                _canvasGroup.blocksRaycasts = true;
+                yield return Fade(0f, 1f, duration);
+                if (_canvasGroup == null) yield break;
+
+                AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName);
+                while (operation != null && !operation.isDone) yield return null;
+                yield return Fade(1f, 0f, duration);
             }
-
-            yield return Fade(1f, 0f, duration);
-
-            _canvasGroup.blocksRaycasts = false;
-            _isLoading = false;
+            finally
+            {
+                // 로드 실패나 오버레이 파괴 때도 입력 잠금과 전환 상태를 남기지 않는다.
+                if (_canvasGroup != null)
+                {
+                    _canvasGroup.alpha = 0f;
+                    _canvasGroup.blocksRaycasts = false;
+                }
+                _isLoading = false;
+            }
         }
 
         private IEnumerator Fade(float from, float to, float duration)
@@ -115,11 +132,12 @@ namespace CoffeeSpec.Core
             float elapsed = 0f;
             while (elapsed < duration)
             {
+                if (_canvasGroup == null) yield break;
                 elapsed += Time.unscaledDeltaTime;
                 _canvasGroup.alpha = Mathf.Lerp(from, to, elapsed / duration);
                 yield return null;
             }
-            _canvasGroup.alpha = to;
+            if (_canvasGroup != null) _canvasGroup.alpha = to;
         }
     }
 }
