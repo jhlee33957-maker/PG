@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.InputSystem;
-using CoffeeSpec.Entities;
+using CoffeeSpec.Rules.Entities;
 using CoffeeSpec.UI;
 
 namespace CoffeeSpec.Player
@@ -9,6 +9,7 @@ namespace CoffeeSpec.Player
     /// 2D 플랫포머 플레이어. 좌우 이동(A/D, ←/→), Z 점프, X 공격, C 대쉬.
     /// 프리팹에 직접 붙이지 않는다. 문장으로 조종(Control)을 받은 RuleEntity가 붙이고, 조종이 빠지면 꺼 둔다.
     /// 인스펙터 기본값은 아래 코드 값이 그대로 쓰인다.
+    /// 좌우 이동, 대쉬, 점프(뜬 동안), 공격(판정이 있는 동안) 중에는 "움직이는 상태"라서 규칙의 "움직이면" 조건에 걸린다.
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D), typeof(Collider2D), typeof(RuleEntity))]
     public class PlatformerPlayer : MonoBehaviour
@@ -66,6 +67,8 @@ namespace CoffeeSpec.Player
         private bool _airDashAvailable = true;
 
         private float _attackCooldownTimer;
+        private float _attackActiveTimer;   // 공격 판정이 남아 있는 시간. 이 동안 움직이는 상태로 친다
+        private bool _jumpActive;           // 점프해서 뜬 뒤 다시 땅에 내려올 때까지
 
         public int Facing => _facing;
         public bool IsGrounded => _grounded;
@@ -93,6 +96,7 @@ namespace CoffeeSpec.Player
                 _jumpCutRequested = false;
                 _dashRequested = false;
                 _ruleEntity.InputOverride = false;
+                _ruleEntity.SetInputMoving(false);
                 return;
             }
 
@@ -106,7 +110,7 @@ namespace CoffeeSpec.Player
             if (kb.zKey.wasReleasedThisFrame) _jumpCutRequested = true;
             if (kb.cKey.wasPressedThisFrame) _dashRequested = true;
             _sprintHeld = kb.cKey.isPressed;
-            // 입력이 있을 때만 랜덤 이동을 눌러서, 손을 떼면 규칙 이동이 다시 이어지게 한다
+            // 입력이 있을 때만 Move 이동을 눌러서, 손을 떼면 규칙 이동이 다시 이어지게 한다
             _ruleEntity.InputOverride = x != 0f;
             if (kb.xKey.wasPressedThisFrame) TryAttack();
 
@@ -114,7 +118,14 @@ namespace CoffeeSpec.Player
             _jumpBufferTimer -= Time.deltaTime;
             _dashCooldownTimer -= Time.deltaTime;
             _attackCooldownTimer -= Time.deltaTime;
+            _attackActiveTimer -= Time.deltaTime;
+
+            // 상태가 바뀔 때만 RuleEntity가 규칙에 알린다 (매 프레임 다시 계산하지 않는다)
+            _ruleEntity.SetInputMoving(IsActing);
         }
+
+        // 좌우 이동, 대쉬, 점프, 공격 중 하나라도 하고 있으면 움직이는 상태
+        private bool IsActing => _inputX != 0f || IsDashing || _dashRequested || _jumpActive || _attackActiveTimer > 0f;
 
         private void FixedUpdate()
         {
@@ -127,10 +138,17 @@ namespace CoffeeSpec.Player
             if (_grounded || _ruleEntity.IsFlying) _airDashAvailable = true;
             if (_grounded) _coyoteTimer = _coyoteTime;
             else _coyoteTimer -= dt;
+            // 점프 후 땅에 다시 내려오면 점프 상태가 끝난다 (뛰어오르는 첫 프레임은 아직 위로 가는 중이라 안 끝난다)
+            if (_jumpActive && _grounded && _rigidbody.linearVelocity.y <= 0.01f) _jumpActive = false;
 
-            if (UpdateDash(dt)) return;
+            if (UpdateDash(dt))
+            {
+                // 대쉬 속도를 넣은 뒤에도 고정물을 뚫지 않게 제한한다.
+                _ruleEntity.BlockBySolids();
+                return;
+            }
 
-            // 규칙으로 랜덤 이동 중이어도 입력이 있으면 플레이어가 우선한다. 입력이 없을 때만 RuleEntity에 맡긴다
+            // 규칙(Move)으로 이동 중이어도 입력이 있으면 플레이어가 우선한다. 입력이 없을 때만 RuleEntity에 맡긴다
             if (!_ruleEntity.IsRandomMoving || _inputX != 0f)
             {
                 float speed = _sprintHeld ? _moveSpeed * _sprintMultiplier : _moveSpeed;
@@ -142,6 +160,7 @@ namespace CoffeeSpec.Player
             }
 
             HandleJump();
+            _ruleEntity.BlockBySolids();
         }
 
         private void UpdateGrounded()
@@ -151,8 +170,8 @@ namespace CoffeeSpec.Player
             _grounded = false;
             for (int i = 0; i < count; i++)
             {
-                if (_groundHits[i].collider.isTrigger) continue;
-                if (_groundHits[i].normal.y > 0.5f) { _grounded = true; break; }
+                // 쌓인 벽 블록의 이음매 윗면은 바닥이 아니다 (벽 타고 오르기 방지)
+                if (RuleEntity.IsGroundHit(_groundHits[i], _collider)) { _grounded = true; break; }
             }
         }
 
@@ -170,6 +189,7 @@ namespace CoffeeSpec.Player
             if (_jumpBufferTimer > 0f && _coyoteTimer > 0f)
             {
                 v.y = _jumpSpeed;
+                _jumpActive = true;
                 // 점프 직후에 바닥으로 다시 끌어당기지 않게 한다
                 _ruleEntity.BlockGroundSnap(0.15f);
                 _jumpBufferTimer = 0f;
@@ -219,6 +239,7 @@ namespace CoffeeSpec.Player
         {
             if (_attackCooldownTimer > 0f) return;
             _attackCooldownTimer = _attackCooldown;
+            _attackActiveTimer = _attackDuration;
 
             var go = new GameObject("AttackHitbox");
             go.transform.SetParent(transform, false);
@@ -246,6 +267,8 @@ namespace CoffeeSpec.Player
             if (_dashTimer > 0f && _rigidbody != null && _ruleEntity != null) _rigidbody.gravityScale = _ruleEntity.Gravity;
             _dashTimer = 0f;
             _inputX = 0f;
+            _jumpActive = false;
+            _attackActiveTimer = 0f;
         }
 
         private void OnDrawGizmosSelected()

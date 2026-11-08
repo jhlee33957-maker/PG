@@ -16,23 +16,23 @@ MonoBehaviour:
   _templateIds:
   - //Hello World!
   - 
-  - NounIsNoun, Person Control
-  - NounIsNoun, Exit Win
-  - NounIsNoun, Exit Fly
-  - IfNounIsNoun, Fly Move
-  - NounIfNounIsNoun, Person Fly Die
+  - NounIsNoun, !Person !Control
+  - NounIsNoun, !Exit !Win
+  - 
+  - NounIsNoun, !Pigeon !Move
+  - NounIfNounIsNoun, !Pigeon !Move Fly
+  - 
+  - NounTouchNoun, Spike Die
   _wordPool:
-  - _value: Pigeon
+  - _value: Person
+  - _value: Control
+  - _value: Exit
+  - _value: Win
   - _value: Pigeon
   - _value: Move
   - _value: Fly
-  - _value: Exit
-  - _value: Exit
-  - _value: Person
-  - _value: Control
-  - _value: Win
-  - _value: Exit
-  - _value: Fly
-  - _value: Fly
+  - _value: Pigeon
+  - _value: Move
+  - _value: Spike
   - _value: Die
-  - _value: Person
+  - _value: Pigeon

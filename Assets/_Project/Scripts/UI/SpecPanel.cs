@@ -67,7 +67,7 @@ namespace CoffeeSpec.UI
         [SerializeField] private Button _btnRetry;
 
         [Header("스테이지 보기")]
-        [Tooltip("미리보기 버튼 (Button_PreView). 기획서를 접고 펼친다. 접으면 레벨을 초기화하고 고른 문장으로 시간이 흐르며, 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
+        [Tooltip("미리보기 버튼 (Button_PreView). 기획서를 접고 펼친다. 접으면 레벨을 초기화하고 규칙이 하나도 없는 상태로 시간이 흐르며, 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
         [SerializeField] private Button _btnPreview;
 
         [Header("빈칸 상자")]
@@ -97,6 +97,8 @@ namespace CoffeeSpec.UI
         [SerializeField] private Color _blankFilledTextColor = Hex("#8FB8F0");
         [SerializeField] private Color _blankFilledBoxColor = Hex("#26344D");
         [SerializeField] private Color _blankFilledOutlineColor = Hex("#4F8BD6");
+        [Tooltip("고정된 처음 단어(StageSpec에서 체크한 단어): 글자·테두리. 플레이어가 옮길 수 없다")]
+        [SerializeField] private Color _lockedWordColor = Hex("#6E7681");
         [Tooltip("단어를 끌고 빈칸 위에 올라갔을 때: 글자·테두리 / 상자")]
         [SerializeField] private Color _blankHoverColor = Hex("#E8913B");
         [SerializeField] private Color _blankHoverBoxColor = new Color(0.91f, 0.57f, 0.23f, 0.25f);
@@ -156,6 +158,7 @@ namespace CoffeeSpec.UI
         private int[] _typedLength;     // 빈칸마다 지금까지 타이핑된 글자 수
         private string[] _blankForms;   // 빈칸마다 보여줄 활용형 이름(문장 틀의 {n@If}). 없으면 null
         private Coroutine[] _typingRoutines;
+        private bool[] _lockedBlanks;   // 빈칸마다 고정 단어인지. 고정 빈칸은 끌어내거나 다른 단어로 바꿀 수 없다
 
         private readonly List<SpecOptionButton> _optionButtons = new List<SpecOptionButton>();
         private RectTransform _wordLayer;   // 단어 칩이 자유롭게 놓이는 화면 전체 층
@@ -282,6 +285,7 @@ namespace CoffeeSpec.UI
             _optionToBlank = CreateFilledArray(_spec.WordPool.Count, -1);
             _typedLength = new int[blankCount];
             _typingRoutines = new Coroutine[blankCount];
+            _lockedBlanks = new bool[blankCount];
             ApplyPresetWords();
 
             CreateWordLayer();
@@ -316,7 +320,7 @@ namespace CoffeeSpec.UI
 
         /// <summary>
         /// StageSpec 줄에 적힌 처음 단어("NounIsNoun, Person _")를 빈칸에 미리 넣어 둔다.
-        /// 단어 묶음에서 아직 안 쓰인 같은 단어를 앞에서부터 쓴다. 미리 넣은 단어도 보통 단어처럼 빼고 옮길 수 있다.
+        /// 단어 묶음에서 아직 안 쓰인 같은 단어를 앞에서부터 쓴다. 미리 넣은 단어도 보통 단어처럼 빼고 옮길 수 있지만, 고정("!")한 단어는 옮길 수 없다.
         /// 타이핑 연출 없이 바로 보인다 (Open에서 타이핑을 끝내 둔다).
         /// </summary>
         private void ApplyPresetWords()
@@ -349,6 +353,7 @@ namespace CoffeeSpec.UI
                     int blank = _blankOffsets[sentenceIndex] + slot;
                     _blankToOption[blank] = option;
                     _optionToBlank[option] = blank;
+                    _lockedBlanks[blank] = line.IsLocked(slot);
                 }
                 sentenceIndex++;
             }
@@ -508,7 +513,7 @@ namespace CoffeeSpec.UI
 
         /// <summary>
         /// 기획서를 연 채 본문과 단어 바만 접어서 스테이지를 미리 본다.
-        /// 접을 때 레벨을 초기화하고 지금 고른 문장을 적용한 뒤 시간을 흐르게 한다 (플레이어 조작은 계속 막힘).
+        /// 접을 때 레벨을 초기화하고 아무 문장도 적용하지 않은 원래 상태로 시간을 흐르게 한다 (플레이어 조작은 계속 막힘).
         /// 다시 펼치면 그 상태 그대로 시간만 멈춘다. 고른 단어는 그대로 남는다.
         /// </summary>
         private void SetStageView(bool viewing)
@@ -529,7 +534,8 @@ namespace CoffeeSpec.UI
             if (viewing)
             {
                 Time.timeScale = 1f;
-                PreviewStarted?.Invoke(CollectFilledSentences());
+                // 고른 문장이 아니라 규칙이 하나도 없는 상태를 보여 준다
+                PreviewStarted?.Invoke(Array.Empty<Sentence>());
             }
             else
             {
@@ -575,7 +581,8 @@ namespace CoffeeSpec.UI
 
             // 단어가 들어 있는 빈칸에서 시작한 끌기만 받는다
             int blankIndex = FindBlankAt(eventData.pressPosition, eventData.pressEventCamera);
-            if (blankIndex < 0 || _blankToOption[blankIndex] < 0)
+            // 고정 단어는 옮길 수 없다
+            if (blankIndex < 0 || _blankToOption[blankIndex] < 0 || _lockedBlanks[blankIndex])
             {
                 eventData.pointerDrag = null;
                 return;
@@ -613,6 +620,10 @@ namespace CoffeeSpec.UI
             MoveDragGhost(eventData);
 
             int hover = FindBlankAt(eventData.position, eventData.pressEventCamera);
+            if (hover >= 0 && _lockedBlanks[hover])
+            {
+                hover = -1; // 고정 빈칸에는 놓을 수 없으므로 강조하지 않는다
+            }
             if (hover != _hoverBlank)
             {
                 _hoverBlank = hover;
@@ -635,6 +646,13 @@ namespace CoffeeSpec.UI
 
             if (!IsOpen)
             {
+                return;
+            }
+
+            // 고정 빈칸에 놓으면 아무 일도 없다 (끌던 단어는 원래 자리에 그대로 있다)
+            if (targetBlank >= 0 && _lockedBlanks[targetBlank])
+            {
+                RefreshAll();
                 return;
             }
 
@@ -1118,6 +1136,10 @@ namespace CoffeeSpec.UI
             {
                 color = _blankHoverColor;
             }
+            else if (filled && _lockedBlanks[blankIndex])
+            {
+                color = _lockedWordColor;
+            }
             else if (invalidSentence)
             {
                 color = _invalidSentenceColor;
@@ -1243,6 +1265,11 @@ namespace CoffeeSpec.UI
             {
                 fill = _blankFilledBoxColor;
                 outline = _invalidSentenceColor;
+            }
+            else if (filled && _lockedBlanks[blankIndex])
+            {
+                fill = _blankFilledBoxColor;
+                outline = _lockedWordColor;
             }
             else if (filled)
             {
