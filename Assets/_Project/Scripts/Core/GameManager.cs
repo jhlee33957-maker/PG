@@ -1,0 +1,135 @@
+﻿using System.Collections;
+using System.Text.RegularExpressions;
+using CoffeeSpec.Rules;
+using CoffeeSpec.UI;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+namespace CoffeeSpec.Core
+{
+    /// <summary>규칙의 결과 이벤트를 받아 클리어·사망 화면과 스테이지 이동만 맡는다.</summary>
+    public sealed class GameManager : MonoBehaviour
+    {
+        [Tooltip("규칙 관리자. 비워 두면 씬에서 찾는다")]
+        [SerializeField] private RuleManager _ruleManager;
+        [Tooltip("클리어하고 다음 스테이지로 넘어가기까지 기다리는 시간(초). 시간이 멈춰 있어도 흐른다")]
+        [SerializeField, Min(0f)] private float _nextStageDelay = 2f;
+        [Tooltip("다음 스테이지 씬이 없을 때 돌아갈 씬 이름")]
+        [SerializeField] private string _titleSceneName = "Title";
+
+        private RuleManager _subscribedManager;
+        private Coroutine _nextStageRoutine;
+        private bool _cleared;
+        private bool _gameOver;
+        private bool _warnedMissing;
+
+        private void Awake() => ResolveManager();
+
+        private void OnEnable()
+        {
+            RuleManager.Available += Bind;
+            ResolveManager();
+        }
+
+        private void ResolveManager()
+        {
+            if (_ruleManager == null) _ruleManager = RuleManager.Instance;
+            if (_ruleManager == null) _ruleManager = FindAnyObjectByType<RuleManager>();
+            if (_ruleManager == null)
+            {
+                if (!_warnedMissing) Debug.LogWarning("[GameManager] RuleManager가 없어 진행 이벤트를 기다리는 중", this);
+                _warnedMissing = true;
+                return;
+            }
+            if (isActiveAndEnabled) Bind(_ruleManager);
+        }
+
+        private void Bind(RuleManager manager)
+        {
+            if (!isActiveAndEnabled || manager == null || _subscribedManager == manager) return;
+            // 인스펙터로 지정한 관리자가 있으면 다른 관리자의 생성 이벤트는 무시한다.
+            if (_ruleManager != null && _ruleManager != manager) return;
+            Unsubscribe();
+            _ruleManager = manager;
+            _subscribedManager = manager;
+            manager.Cleared += OnCleared;
+            manager.ControlledDeathChanged += OnControlledDeathChanged;
+            manager.Reset += OnReset;
+            // 늦게 켜져도 이미 확정된 규칙 상태와 화면을 맞춘다.
+            if (manager.IsCleared) OnCleared();
+            else OnControlledDeathChanged(manager.AllControlledDead);
+        }
+
+        private void OnDisable()
+        {
+            RuleManager.Available -= Bind;
+            Unsubscribe();
+            CancelNextStage();
+            _cleared = false;
+            _gameOver = false;
+            ClearScreen.Hide();
+        }
+
+        private void Unsubscribe()
+        {
+            if (_subscribedManager == null) return;
+            _subscribedManager.Cleared -= OnCleared;
+            _subscribedManager.ControlledDeathChanged -= OnControlledDeathChanged;
+            _subscribedManager.Reset -= OnReset;
+            _subscribedManager = null;
+        }
+
+        private void OnCleared()
+        {
+            if (_cleared || _gameOver) return;
+            _cleared = true;
+            ClearScreen.Show();
+            CancelNextStage();
+            _nextStageRoutine = StartCoroutine(GoToNextStage());
+        }
+
+        private void OnControlledDeathChanged(bool allDead)
+        {
+            _gameOver = allDead;
+            if (_cleared) return;
+            if (allDead) ClearScreen.ShowDeath();
+            else ClearScreen.Hide();
+        }
+
+        private void OnReset()
+        {
+            _cleared = false;
+            _gameOver = false;
+            CancelNextStage();
+            ClearScreen.Hide();
+        }
+
+        private void CancelNextStage()
+        {
+            if (_nextStageRoutine == null) return;
+            StopCoroutine(_nextStageRoutine);
+            _nextStageRoutine = null;
+        }
+
+        private IEnumerator GoToNextStage()
+        {
+            yield return new WaitForSecondsRealtime(_nextStageDelay);
+            _nextStageRoutine = null;
+            SceneFader.LoadScene(NextSceneName());
+        }
+
+        // 마지막 숫자를 하나 올린 씬이 없으면 타이틀로 돌아간다.
+        private string NextSceneName()
+        {
+            string current = SceneManager.GetActiveScene().name;
+            var match = Regex.Match(current, @"(\d+)(?!.*\d)");
+            if (match.Success && int.TryParse(match.Value, out int number))
+            {
+                string next = current.Substring(0, match.Index) + (number + 1) + current.Substring(match.Index + match.Length);
+                if (Application.CanStreamedLevelBeLoaded(next)) return next;
+                Debug.Log($"[GameManager] 다음 스테이지 씬 '{next}'이 Build Settings에 없어 {_titleSceneName}(으)로 돌아감");
+            }
+            return _titleSceneName;
+        }
+    }
+}
