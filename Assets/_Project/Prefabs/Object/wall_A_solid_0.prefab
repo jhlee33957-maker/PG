@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 1539628934612467941}
   - component: {fileID: 7854202957286280344}
   - component: {fileID: 3841473639571981698}
+  - component: {fileID: 506416088639147358}
   m_Layer: 0
   m_Name: wall_A_solid_0
   m_TagString: Untagged
@@ -167,3 +168,32 @@ BoxCollider2D:
   m_AutoTiling: 0
   m_Size: {x: 1, y: 1}
   m_EdgeRadius: 0
+--- !u!114 &506416088639147358
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7458994309003949819}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21ade8c689d892840b06da0188552b46, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Entities.RuleEntity
+  _word:
+    _value: Wall
+  _id: -1
+  _moveSpeed: 2
+  _directionInterval: 1
+  _colliderCornerRadius: 0.02
+  _groundSnapDistance: 0.1
+  _sinkTolerance: 0.03
+  _removedByAttack: 0
+  _faceMoveDirection: 1
+  _controlGravity: 1.5
+  _flyHeightRange: {x: 6, y: 8}
+  _bobAmplitude: 0.15
+  _bobPeriod: 2
+  _flyFollowStrength: 8
+  _flyMaxSpeed: 6
+  _flyGroundSearchDistance: 20

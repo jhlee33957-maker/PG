@@ -73,6 +73,8 @@ namespace CoffeeSpec.Rules
 
         /// <summary>조건(~면) 활용형 열 이름. 이 열이 비어 있는 명사는 받침을 보고 자동으로 만든다.</summary>
         public const string IfForm = "If";
+        /// <summary>닿은 대상을 바꾸는(~이/가 된다, ~게 한다) 활용형 열 이름. 이 열이 비어 있는 명사는 받침을 보고 이/가를 붙인다.</summary>
+        public const string AcForm = "ac";
 
         private static readonly HashSet<string> WarnedForms = new();
 
@@ -118,6 +120,9 @@ namespace CoffeeSpec.Rules
 
             if (e.Type == WordType.Noun && string.Equals(form, IfForm, StringComparison.OrdinalIgnoreCase))
                 return e.DisplayName + (EndsWithFinalConsonant(e.DisplayName) ? "이" : "");
+            // ac형 명사는 '된다' 앞의 조사까지 붙인다 (사람이, 비둘기가). '된다'는 문장 틀의 끝말에 적는다
+            if (e.Type == WordType.Noun && string.Equals(form, AcForm, StringComparison.OrdinalIgnoreCase))
+                return e.DisplayName + (EndsWithFinalConsonant(e.DisplayName) ? "이" : "가");
 
             // 같은 경고가 매 프레임 쌓이지 않게 단어·활용형마다 한 번만 남긴다
             if (WarnedForms.Add($"{e.Id}@{form}"))

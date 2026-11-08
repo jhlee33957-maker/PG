@@ -47,6 +47,9 @@ namespace CoffeeSpec.Entities
         [SerializeField, Min(0f)] private float _flyGroundSearchDistance = 20f;
 
         private static readonly RaycastHit2D[] GroundHits = new RaycastHit2D[4];
+        private static readonly RaycastHit2D[] SolidHits = new RaycastHit2D[8];
+        // 고정물 앞에서 멈출 때 남겨 두는 틈. 딱 붙이면 다음 검사에서 겹친 것으로 잡혀 떨린다
+        private const float SolidSkin = 0.01f;
         private static PhysicsMaterial2D _noFriction;
         private static readonly System.Collections.Generic.List<Collider2D> Overlaps = new();
 
@@ -79,6 +82,19 @@ namespace CoffeeSpec.Entities
         private int _flyOffFrame = -1; // 날기가 꺼진 프레임. 같은 프레임에 다시 켜지면 높이를 새로 고르지 않는다
         private bool _baseFreezeRotation; // 지금 모습(프리팹) 설정의 회전 고정. Static 대상은 안 막혀 있을 수 있어서 날거나 조종받는 동안만 막는다
         private bool _controlled;         // 문장으로 조종(Control)을 받는 중
+        // 사망(Remove)할 때 꺼 둔 콜라이더. 변신으로 다시 살아날 때 이것만 다시 켠다
+        private readonly System.Collections.Generic.List<Collider2D> _collidersOffByRemove = new();
+        // 지금 머리 위에 올라서 있는 대상들. 닿을 때와 떨어질 때만 바뀐다
+        private readonly System.Collections.Generic.HashSet<RuleEntity> _treaders = new();
+        // 위에서 눌렀다고 볼 접촉 법선의 기준 (이 대상 쪽으로 향하는 법선이 이만큼 아래를 향해야 한다)
+        private const float TreadNormalY = -0.5f;
+        // 지금 모습(프리팹) 설정의 통과 판정. 밟힐 수 있는 동안만 잠깐 끄고, 끝나면 이 값으로 돌아간다
+        private bool _baseIsTrigger;
+        private bool _treadable;
+        // 만져진다(Touch)를 받은 동안. 통과되는 대상도 이때는 부딪히는 몸이 된다
+        private bool _touchable;
+        // 지금 닿아 있는 콜라이더 (벽·바닥 포함, 통과 판정 겹침 포함). 닿을 때와 떨어질 때만 바뀐다
+        private readonly System.Collections.Generic.HashSet<Collider2D> _touching = new();
 
         // 서로 밀지 못하게: 스스로 움직이지 않는 동안은 가로 위치를 잠가서 부딪혀도 밀리지 않는다
         private const float StopSpeed = 0.05f;
@@ -97,12 +113,55 @@ namespace CoffeeSpec.Entities
         public bool IsFlying => _flying;
         /// <summary>플레이어가 직접 조작 중이면 true. 이때는 랜덤 이동이 속도를 덮어쓰지 않는다.</summary>
         public bool InputOverride { get; set; }
+        /// <summary>조종받는 대상을 플레이어가 움직이는 중인지(이동·대쉬·점프·공격). 규칙의 "움직이면" 조건에 걸린다.</summary>
+        public bool IsInputMoving { get; private set; }
         /// <summary>문장으로 조종(Control)을 받아 플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
         public bool IsPlayer => _controlled;
         /// <summary>지금 상태에서 써야 할 중력. 나는 중이면 0, 중력 없는 모습이 조종받으면 조종용 중력.</summary>
         public float Gravity => _flying ? 0f : (_controlled && _defaultGravity <= 0f ? _controlGravity : _defaultGravity);
-        /// <summary>공격으로 사라진(숨겨진) 상태. 규칙과 접촉에서는 빠지지만 변신 원본으로는 계속 쓰인다.</summary>
+        /// <summary>
+        /// 사망한(숨겨진) 상태. 공격과 Die 문장 모두 이 상태가 된다.
+        /// 규칙에서는 "사망하면" 조건에만 걸리고, 접촉에서는 빠진다. 변신 원본으로는 계속 쓰인다.
+        /// </summary>
         public bool IsRemoved { get; private set; }
+        /// <summary>다른 대상이 지금 머리 위에 올라서 있는지. 규칙의 "밟히면" 조건에 걸린다. 내려가면 풀린다.</summary>
+        public bool IsTreaded
+        {
+            get
+            {
+                foreach (var t in _treaders)
+                    if (t != null && !t.IsRemoved) return true;
+                return false;
+            }
+        }
+
+        /// <summary>지금 무언가(벽·바닥 포함)에 닿아 있는지. 규칙의 "만지면" 조건에 걸린다. 떨어지면 풀린다.</summary>
+        public bool IsTouched
+        {
+            get
+            {
+                foreach (var c in _touching)
+                {
+                    if (c == null || !c.enabled || !c.gameObject.activeInHierarchy) continue;
+                    var owner = c.GetComponentInParent<RuleEntity>();
+                    if (owner != null && owner.IsRemoved) continue;
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        /// <summary>지금 닿아 있는 다른 대상들(벽·바닥 대상 포함, 사망한 대상 제외)을 into에 담는다. 같은 대상은 한 번만 담는다.</summary>
+        public void GetTouchingEntities(System.Collections.Generic.List<RuleEntity> into)
+        {
+            foreach (var c in _touching)
+            {
+                if (c == null || !c.enabled || !c.gameObject.activeInHierarchy) continue;
+                var owner = c.GetComponentInParent<RuleEntity>();
+                if (owner == null || owner == this || owner.IsRemoved || into.Contains(owner)) continue;
+                into.Add(owner);
+            }
+        }
 
         private void Awake()
         {
@@ -117,6 +176,7 @@ namespace CoffeeSpec.Entities
             _originalId = _word;
             _defaultGravity = _rigidbody.gravityScale;
             _originalIsTrigger = _collider != null && _collider.isTrigger;
+            _baseIsTrigger = _originalIsTrigger;
             _originalConstraints = _rigidbody.constraints;
             _baseFreezeX = (_originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
             _baseFreezeRotation = (_originalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
@@ -246,6 +306,8 @@ namespace CoffeeSpec.Entities
         public void TransformInto(WordId id, RuleEntity source)
         {
             if (source == null) return;
+            // 사망한 대상이 변신하면 새 모습으로 다시 살아난다 (사망 상태는 넘어가지 않는다)
+            if (IsRemoved) Revive();
             _word = id;
 
             // 발 위치를 유지해야 커진 콜라이더가 바닥에 박히지 않는다
@@ -273,7 +335,8 @@ namespace CoffeeSpec.Entities
 
         private void CopyPhysicsFrom(RuleEntity source)
         {
-            if (_collider != null) _collider.isTrigger = source._originalIsTrigger;
+            _baseIsTrigger = source._originalIsTrigger;
+            ApplyTrigger();
             _bodyType = source._originalBodyType;
             _defaultGravity = source._defaultGravity;
             // 공격에 사라지는 성질도 새 모습을 따라간다
@@ -285,6 +348,17 @@ namespace CoffeeSpec.Entities
             ApplyRotationLock();
             _baseFreezeX = (source._originalConstraints & RigidbodyConstraints2D.FreezePositionX) != 0;
             UpdatePushLock();
+        }
+
+        /// <summary>
+        /// 플레이어가 움직이는 중인지 알려 준다. 바뀔 때만 RuleManager에 알려서 "움직이면" 조건을 다시 따지게 한다.
+        /// </summary>
+        public void SetInputMoving(bool moving)
+        {
+            if (IsRemoved) moving = false;
+            if (IsInputMoving == moving) return;
+            IsInputMoving = moving;
+            if (_manager != null) _manager.NotifyInputMovingChanged(this);
         }
 
         /// <summary>플레이어가 직접 움직이는 중인지 알려 준다(조작·대쉬). 이때만 가로 잠금이 풀린다.</summary>
@@ -347,6 +421,7 @@ namespace CoffeeSpec.Entities
 
             if (player != null) player.enabled = false;
             InputOverride = false;
+            SetInputMoving(false);
             SetSelfDriven(false);
             ApplyGravity();
             ApplyRotationLock();
@@ -440,6 +515,8 @@ namespace CoffeeSpec.Entities
         {
             if (!_removedByAttack || IsRemoved || IsPlayer) return false;
             Remove();
+            // Die 문장으로 죽은 것과 똑같이 "사망하면" 조건을 다시 따지게 알린다 (죽는 순간에만 한 번)
+            if (_manager != null) _manager.NotifyDied(this);
             return true;
         }
 
@@ -454,9 +531,33 @@ namespace CoffeeSpec.Entities
             ResetState();
             SetControl(false);
             _renderer.enabled = false;
-            foreach (var col in GetComponents<Collider2D>()) col.enabled = false;
+            _collidersOffByRemove.Clear();
+            foreach (var col in GetComponents<Collider2D>())
+            {
+                if (!col.enabled) continue;
+                col.enabled = false;
+                _collidersOffByRemove.Add(col);
+            }
             _rigidbody.linearVelocity = Vector2.zero;
             _rigidbody.simulated = false;
+            _treaders.Clear(); // 사라지면 아무도 올라서 있을 수 없다
+            _touching.Clear(); // 사라지면 아무것에도 닿아 있지 않다
+        }
+
+        // 사망 상태를 풀고 다시 보이게, 부딪히게 한다. 변신으로 살아날 때만 쓴다
+        private void Revive()
+        {
+            IsRemoved = false;
+            _renderer.enabled = true;
+            foreach (var col in _collidersOffByRemove)
+            {
+                if (col != null) col.enabled = true;
+            }
+            _collidersOffByRemove.Clear();
+            _rigidbody.simulated = true;
+            _rigidbody.linearVelocity = Vector2.zero;
+            // 변신에서 발 위치를 재려면 다시 켠 콜라이더의 크기가 바로 맞아야 한다
+            Physics2D.SyncTransforms();
         }
 
         // 문장을 다시 적용하기 전에 지속 효과(이동, 날기)만 끈다. Is로 바뀐 모습과 태그는 영구 변화라 되돌리지 않는다.
@@ -468,8 +569,102 @@ namespace CoffeeSpec.Entities
         }
 
         // 닿은 상대를 RuleManager에 알리기만 한다. 무엇이 일어날지는 RuleManager가 태그를 보고 정한다
-        private void OnTriggerEnter2D(Collider2D other) => ReportContact(other);
-        private void OnCollisionEnter2D(Collision2D collision) => ReportContact(collision.collider);
+        private void OnTriggerEnter2D(Collider2D other)
+        {
+            ReportContact(other);
+            UpdateTouch(other, true);
+        }
+
+        private void OnTriggerExit2D(Collider2D other) => UpdateTouch(other, false);
+
+        private void OnCollisionEnter2D(Collision2D collision)
+        {
+            ReportContact(collision.collider);
+            UpdateTread(collision, true);
+            UpdateTouch(collision.collider, true);
+        }
+
+        private void OnCollisionExit2D(Collision2D collision)
+        {
+            UpdateTread(collision, false);
+            UpdateTouch(collision.collider, false);
+        }
+
+        // 닿은 콜라이더를 기억하고, 떨어지면 지운다. 닿음 여부가 바뀔 때만 RuleManager에 알린다
+        private void UpdateTouch(Collider2D other, bool entering)
+        {
+            // 자기 몸의 다른 콜라이더는 닿은 것으로 치지 않는다
+            if (other == null || (_rigidbody != null && other.attachedRigidbody == _rigidbody)) return;
+            bool was = IsTouched;
+            bool setChanged = entering ? _touching.Add(other) : _touching.Remove(other);
+            if (setChanged && _manager != null) _manager.NotifyTouchChanged(this, was != IsTouched);
+        }
+
+        /// <summary>
+        /// 만져진다(Touch)를 받은 동안 켠다. 출구처럼 통과되는 대상도 이때는 부딪히는 몸이 된다.
+        /// 부딪혀도 닿은 것으로 보고하므로 클리어 같은 접촉 규칙은 그대로 걸린다.
+        /// </summary>
+        public void SetTouchable(bool on)
+        {
+            if (_touchable == on) return;
+            _touchable = on;
+            ApplyTrigger();
+        }
+
+        // 위에서 내려와 머리에 닿은 대상을 기억하고, 떨어지면 지운다. 밟힘 여부가 바뀔 때만 RuleManager에 알린다
+        private void UpdateTread(Collision2D collision, bool entering)
+        {
+            var other = collision.collider != null ? collision.collider.GetComponentInParent<RuleEntity>() : null;
+            if (other == null || other == this) return;
+            bool was = IsTreaded;
+            if (entering)
+            {
+                if (IsPressedFromAbove(collision)) _treaders.Add(other);
+            }
+            else
+            {
+                _treaders.Remove(other);
+            }
+            if (was != IsTreaded && _manager != null) _manager.NotifyTreadChanged(this);
+        }
+
+        /// <summary>
+        /// "밟히면" 조건 문장의 주어인 동안 켠다. 출구처럼 통과되는 대상도 이때는 부딪히는 몸이 되어 밟을 수 있다.
+        /// 부딪혀도 닿은 것으로 보고하므로 클리어 같은 접촉 규칙은 그대로 걸린다.
+        /// </summary>
+        public void SetTreadable(bool on)
+        {
+            if (_treadable == on) return;
+            _treadable = on;
+            ApplyTrigger();
+        }
+
+        // 통과 판정은 밟힐 수 있거나 만져질 수 있는 동안만 끄고, 아니면 지금 모습 설정을 따른다
+        private void ApplyTrigger()
+        {
+            if (_collider == null) return;
+            bool trigger = _baseIsTrigger && !_treadable && !_touchable;
+            if (_collider.isTrigger == trigger) return;
+            _collider.isTrigger = trigger;
+            // 판정이 바뀌면 지금 접촉은 물리 엔진이 새로 알려 주므로 기억한 접촉을 비운다
+            bool wasTouched = IsTouched;
+            bool hadContacts = _touching.Count > 0;
+            _touching.Clear();
+            if (hadContacts && _manager != null) _manager.NotifyTouchChanged(this, wasTouched);
+            if (!trigger) return;
+            // 다시 통과되면 아무도 올라서 있을 수 없다
+            bool was = IsTreaded;
+            _treaders.Clear();
+            if (was && _manager != null) _manager.NotifyTreadChanged(this);
+        }
+
+        // 접촉 법선은 상대에서 이 대상 쪽으로 향한다. 아래를 향하면 상대가 위에서 누르는 것이다
+        private static bool IsPressedFromAbove(Collision2D collision)
+        {
+            for (int i = 0; i < collision.contactCount; i++)
+                if (collision.GetContact(i).normal.y <= TreadNormalY) return true;
+            return false;
+        }
 
         private void ReportContact(Collider2D other)
         {
@@ -500,7 +695,14 @@ namespace CoffeeSpec.Entities
             UpdatePushLock();
             SnapToGround();
             if (_flying) UpdateFly();
-            if (!_randomMove) return;
+            if (_randomMove) UpdateRandomMove();
+            // 플레이어 조작이 이 뒤에 속도를 넣는 경우는 PlatformerPlayer가 한 번 더 부른다
+            BlockBySolids();
+        }
+
+        // Move: 정해진 간격마다 좌우 방향을 랜덤으로 바꾸며 움직인다
+        private void UpdateRandomMove()
+        {
             // Move는 항상 좌우로만 움직인다. 중력을 받는 대상(나는 중 포함)은 속도로, 아닌 대상은 위치로 옮긴다
             bool usesGravity = (_rigidbody.gravityScale > 0f || _flying) && _rigidbody.bodyType == RigidbodyType2D.Dynamic;
             _timer -= Time.fixedDeltaTime;
@@ -517,7 +719,62 @@ namespace CoffeeSpec.Entities
             if (usesGravity)
                 _rigidbody.linearVelocity = new Vector2(_direction.x * _moveSpeed, _rigidbody.linearVelocity.y);
             else
-                _rigidbody.MovePosition(_rigidbody.position + _direction * (_moveSpeed * Time.fixedDeltaTime));
+            {
+                Vector2 delta = _direction * (_moveSpeed * Time.fixedDeltaTime);
+                if (IsPassThrough) delta = new Vector2(LimitBySolid(Vector2.right, delta.x), LimitBySolid(Vector2.up, delta.y));
+                _rigidbody.MovePosition(_rigidbody.position + delta);
+            }
+        }
+
+        // 통과 판정(트리거) 몸인지. 트리거는 물리 충돌을 하지 않아서 그냥 두면 벽과 바닥을 뚫는다
+        private bool IsPassThrough => !IsRemoved && _collider != null && _collider.isTrigger;
+
+        /// <summary>
+        /// 통과 판정(출구 등) 몸이 스스로 움직일 때(날기, Move, 조종) 벽·바닥 같은 고정물을 뚫지 않게 한다.
+        /// 이번 물리 프레임에 갈 거리만큼 미리 쓸어 보고, 고정물(Static 바디나 바디 없는 콜라이더)에 닿으면 그 앞까지만 가게 속도를 줄인다.
+        /// 플레이어·생물처럼 움직이는 몸은 그대로 통과한다. 속도를 넣은 뒤에 부른다.
+        /// </summary>
+        public void BlockBySolids()
+        {
+            if (!IsPassThrough || _rigidbody.bodyType != RigidbodyType2D.Dynamic) return;
+            float dt = Time.fixedDeltaTime;
+            Vector2 v = _rigidbody.linearVelocity;
+            // 중력은 이번 프레임 속도에 더해지므로 아래로 갈 거리에 미리 넣어 둔다
+            float vy = v.y + Physics2D.gravity.y * _rigidbody.gravityScale * dt;
+            float limitedX = LimitBySolid(Vector2.right, v.x * dt) / dt;
+            float limitedY = LimitBySolid(Vector2.up, vy * dt);
+            bool blockedY = Mathf.Abs(limitedY) < Mathf.Abs(vy * dt) - 0.0001f;
+            // 막혔으면 이번 프레임 중력이 더해진 뒤에 딱 막힌 곳까지만 가도록 중력만큼 미리 빼 둔다 (물리 엔진은 속도에 중력을 더한 뒤 움직인다)
+            float nextVy = blockedY ? limitedY / dt - Physics2D.gravity.y * _rigidbody.gravityScale * dt : v.y;
+            _rigidbody.linearVelocity = new Vector2(limitedX, blockedY ? nextVy : v.y);
+        }
+
+        // axis 방향(부호는 move)으로 move만큼 갈 때 고정물에 막히면 그 앞까지의 거리로 줄인다
+        private float LimitBySolid(Vector2 axis, float move)
+        {
+            float distance = Mathf.Abs(move);
+            if (distance < 0.00001f) return move;
+            Vector2 dir = axis * Mathf.Sign(move);
+
+            var filter = new ContactFilter2D();
+            filter.NoFilter();
+            filter.useTriggers = false;
+            int count = _collider.Cast(dir, filter, SolidHits, distance + SolidSkin, true);
+            float allowed = distance;
+            for (int i = 0; i < count; i++)
+            {
+                var hit = SolidHits[i];
+                var other = hit.collider;
+                if (other == null || other.isTrigger) continue;
+                var body = other.attachedRigidbody;
+                if (body == _rigidbody) continue;
+                // 움직이는 몸(플레이어, 생물, 나는 벽 등)은 고정물이 아니라 통과한다
+                if (body != null && body.bodyType != RigidbodyType2D.Static) continue;
+                // 가는 방향을 마주 보는 면만 막는다. 발밑 바닥처럼 이미 닿아 있는 면에서 옆이나 위로 갈 때는 막지 않는다
+                if (Vector2.Dot(hit.normal, dir) > -0.5f) continue;
+                allowed = Mathf.Min(allowed, Mathf.Max(0f, hit.distance - SolidSkin));
+            }
+            return Mathf.Sign(move) * allowed;
         }
     }
 }

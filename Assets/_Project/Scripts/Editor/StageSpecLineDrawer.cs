@@ -12,7 +12,8 @@ namespace CoffeeSpec.EditorTools
     /// 줄 종류(문장/주석/빈 줄) → 문장이면 SentencesCSV Id 드롭다운 → 빈칸마다 처음 단어 드롭다운 → 미리보기.
     /// 처음 단어는 그 빈칸 품사에 맞고 Word Pool에 있는 단어만 보여 주고,
     /// Word Pool 개수만큼 이미 다른 줄에서 쓰고 있으면 회색(선택 불가)으로 보여 준다.
-    /// 저장은 기존 글자 형식("NounIsNoun, Person _", "// 주석", "")으로 한다.
+    /// 처음 단어 왼쪽 체크박스는 고정 표시: 체크하면 플레이어가 그 단어를 옮길 수 없다. 빈칸이면 체크할 수 없다.
+    /// 저장은 기존 글자 형식("NounIsNoun, !Person _", "// 주석", "")으로 한다. 고정 단어는 앞에 "!"가 붙는다.
     /// </summary>
     [CustomPropertyDrawer(typeof(StageSpecLineAttribute))]
     public class StageSpecLineDrawer : PropertyDrawer
@@ -21,6 +22,8 @@ namespace CoffeeSpec.EditorTools
         private const string PoolField = "_wordPool";
         private const string LinesField = "_templateIds";
         private const string BlankLabel = "(빈칸)";
+        private const float LockToggleWidth = 18f;
+        private static readonly GUIContent LockToggleContent = new GUIContent("", "고정: 체크하면 플레이어가 이 단어를 옮길 수 없고 회색으로 보인다");
 
         private static readonly string[] KindNames = { "문장", "주석", "빈 줄" };
 
@@ -35,6 +38,7 @@ namespace CoffeeSpec.EditorTools
             public string Comment;
             public string TemplateId;
             public List<WordId> Preset;
+            public List<bool> Locked; // Preset과 같은 순서로 고정 여부
         }
 
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
@@ -126,7 +130,8 @@ namespace CoffeeSpec.EditorTools
             if (next != current)
             {
                 parsed.TemplateId = ids[next];
-                parsed.Preset.Clear(); // 빈칸 구성이 달라지므로 처음 단어는 비운다
+                parsed.Preset.Clear(); // 빈칸 구성이 달라지므로 처음 단어와 고정 표시는 비운다
+                parsed.Locked.Clear();
                 property.stringValue = Serialize(parsed);
                 return;
             }
@@ -135,6 +140,7 @@ namespace CoffeeSpec.EditorTools
 
             // 처음 단어 개수를 빈칸 수에 맞춘다
             while (parsed.Preset.Count < template.Pattern.Count) parsed.Preset.Add(default);
+            while (parsed.Locked.Count < parsed.Preset.Count) parsed.Locked.Add(false);
 
             var pool = ReadPool(so);
             var used = CountUsedInOtherLines(so, property.propertyPath, templates);
@@ -155,7 +161,10 @@ namespace CoffeeSpec.EditorTools
                               Dictionary<WordId, int> pool, Dictionary<WordId, int> used)
         {
             WordId current = parsed.Preset[slot];
-            var labelRect = EditorGUI.PrefixLabel(rect, new GUIContent($"{slot + 1}. {template.SlotLabel(slot)}"));
+            var fieldRect = EditorGUI.PrefixLabel(rect, new GUIContent($"{slot + 1}. {template.SlotLabel(slot)}"));
+            var toggleRect = new Rect(fieldRect.x, fieldRect.y, LockToggleWidth, fieldRect.height);
+            var labelRect = new Rect(fieldRect.x + LockToggleWidth + 2f, fieldRect.y,
+                                     Mathf.Max(0f, fieldRect.width - LockToggleWidth - 2f), fieldRect.height);
 
             string buttonText;
             if (current.IsEmpty) buttonText = BlankLabel;
@@ -166,6 +175,19 @@ namespace CoffeeSpec.EditorTools
             // 들여쓰기가 버튼 안쪽까지 밀리지 않게 잠깐 끈다
             int indent = EditorGUI.indentLevel;
             EditorGUI.indentLevel = 0;
+
+            // 고정 체크박스 (빈칸이면 고정할 단어가 없으므로 끈다)
+            bool locked = !current.IsEmpty && parsed.Locked[slot];
+            using (new EditorGUI.DisabledScope(current.IsEmpty))
+            {
+                bool nextLocked = EditorGUI.Toggle(toggleRect, LockToggleContent, locked);
+                if (nextLocked != locked)
+                {
+                    parsed.Locked[slot] = nextLocked;
+                    property.stringValue = Serialize(parsed);
+                }
+            }
+
             if (!EditorGUI.DropdownButton(labelRect, new GUIContent(buttonText), FocusType.Keyboard))
             {
                 EditorGUI.indentLevel = indent;
@@ -186,7 +208,9 @@ namespace CoffeeSpec.EditorTools
                 used.TryGetValue(word, out int usedCount);
                 bool isCurrent = word == current;
                 bool full = !isCurrent && usedCount >= pair.Value;
-                var content = new GUIContent($"{word.Value} ({WordTags.DisplayName(word)})  {usedCount}/{pair.Value}");
+                // 메뉴 글자에 '/'가 들어가면 하위 메뉴로 갈라지므로 남은 개수만 적는다
+                int left = Mathf.Max(0, pair.Value - usedCount);
+                var content = new GUIContent($"{word.Value} ({WordTags.DisplayName(word)})  {left}");
                 if (full) menu.AddDisabledItem(content);
                 else menu.AddItem(content, isCurrent, () => SetSlot(so, path, slot, word));
             }
@@ -201,7 +225,9 @@ namespace CoffeeSpec.EditorTools
             if (prop == null) return;
             var parsed = Parse(prop.stringValue);
             while (parsed.Preset.Count <= slot) parsed.Preset.Add(default);
+            while (parsed.Locked.Count <= slot) parsed.Locked.Add(false);
             parsed.Preset[slot] = word;
+            if (word.IsEmpty) parsed.Locked[slot] = false; // 빈칸은 고정할 수 없다
             prop.stringValue = Serialize(parsed);
             so.ApplyModifiedProperties();
         }
@@ -210,7 +236,7 @@ namespace CoffeeSpec.EditorTools
 
         private static Parsed Parse(string raw)
         {
-            var p = new Parsed { Preset = new List<WordId>() };
+            var p = new Parsed { Preset = new List<WordId>(), Locked = new List<bool>() };
             string entry = raw == null ? "" : raw.Trim();
             if (entry.Length == 0)
             {
@@ -233,7 +259,12 @@ namespace CoffeeSpec.EditorTools
             }
             p.TemplateId = entry.Substring(0, comma).Trim();
             foreach (string token in entry.Substring(comma + 1).Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries))
-                p.Preset.Add(token == StageSpec.EmptyPresetToken ? default : new WordId(token));
+            {
+                bool isLocked = token.Length > 1 && token[0] == StageSpec.LockedPresetPrefix;
+                string word = isLocked ? token.Substring(1) : token;
+                p.Preset.Add(word == StageSpec.EmptyPresetToken ? default : new WordId(word));
+                p.Locked.Add(isLocked);
+            }
             return p;
         }
 
@@ -254,7 +285,13 @@ namespace CoffeeSpec.EditorTools
             if (!any) return id;
 
             var tokens = new List<string>();
-            foreach (var w in p.Preset) tokens.Add(w.IsEmpty ? StageSpec.EmptyPresetToken : w.Value);
+            for (int i = 0; i < p.Preset.Count; i++)
+            {
+                var w = p.Preset[i];
+                if (w.IsEmpty) { tokens.Add(StageSpec.EmptyPresetToken); continue; }
+                bool isLocked = p.Locked != null && i < p.Locked.Count && p.Locked[i];
+                tokens.Add(isLocked ? StageSpec.LockedPresetPrefix + w.Value : w.Value);
+            }
             return $"{id}{StageSpec.PresetSeparator} {string.Join(" ", tokens)}";
         }
 

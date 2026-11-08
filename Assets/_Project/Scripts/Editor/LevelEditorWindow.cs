@@ -644,6 +644,8 @@ namespace CoffeeSpec.EditorTools
         {
             EditorSceneManager.sceneOpened += (scene, mode) => { ClearLevel(scene); TryOpen(scene); TryClose(scene, mode); };
             EditorSceneManager.sceneClosing += (scene, _) => ClearLevel(scene);
+            // 유니티를 끌 때는 sceneClosing이 오지 않으므로 종료 직전에 따로 비운다
+            EditorApplication.wantsToQuit += OnWantsToQuit;
             // 에디터를 켰을 때 이미 EditorScene이 열려 있는 경우
             EditorApplication.delayCall += () => TryOpen(SceneManager.GetActiveScene());
         }
@@ -669,6 +671,19 @@ namespace CoffeeSpec.EditorTools
                 LevelEditorWindow.ResetCurrentMap();
                 return;
             }
+        }
+
+        /// <summary>
+        /// 유니티 종료 직전. EditorScene이 열려 있으면 저장 안 한 배치를 먼저 물어본 뒤(저장하면 맵 데이터에 반영됨) Level 밑을 비우고 저장한다.
+        /// 저장 창에서 취소하면 종료도 취소한다.
+        /// </summary>
+        private static bool OnWantsToQuit()
+        {
+            var scene = SceneManager.GetSceneByPath(LevelEditorWindow.EditorScenePath);
+            if (!scene.IsValid() || !scene.isLoaded) return true;
+            if (scene.isDirty && !EditorSceneManager.SaveModifiedScenesIfUserWantsTo(new[] { scene })) return false;
+            ClearLevel(scene);
+            return true;
         }
 
         // EditorScene이 아닌 씬으로 바꿔 열면 레벨 에디터 창을 닫는다 (추가로 여는 씬은 무시)

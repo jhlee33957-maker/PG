@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using CoffeeSpec.Core;
 using CoffeeSpec.Maps;
 using CoffeeSpec.Entities;
 using CoffeeSpec.UI;
@@ -20,6 +24,21 @@ namespace CoffeeSpec.Rules
     ///   조건 재료(태그, 상태)는 모두 이 매니저가 바꾸므로 매 프레임 확인하지 않고,
     ///   문장이나 대상이 바뀌어 다시 적용할 때만 결과가 더 안 바뀔 때까지 계산한다.
     ///   조건으로 생긴 변신도 다른 변신처럼 영구다.
+    /// - 사망: Die 문장과 플레이어 공격은 똑같이 대상을 사망 상태(숨김)로 만든다. 사망 상태는 계속 남아서
+    ///   "사망하면" 조건에 걸린다. 사망한 대상은 다른 조건과 효과는 받지 않지만, "사망하면" 조건으로 변신하면
+    ///   새 모습으로 다시 살아나고 사망 상태는 풀린다. 공격으로 죽으면 그 순간에만 규칙을 다시 적용한다.
+    /// - 플레이어 입력: 조종 대상을 좌우 이동·대쉬·점프·공격으로 움직이는 동안은 "움직이면" 조건에 걸린다
+    ///   (랜덤 이동은 켜지 않는다). 움직이기 시작할 때와 멈출 때만 규칙을 다시 적용한다.
+    /// - 밟힘: 다른 대상이 머리 위에 올라서 있는 동안 "밟히면" 조건에 걸린다. 결과 쪽에 쓰면 효과가 없다.
+    ///   출구처럼 통과되는 대상도 "밟히면" 문장의 주어인 동안은 부딪히는 몸이 된다 (부딪혀도 클리어는 된다).
+    ///   올라설 때와 내려갈 때만 규칙을 다시 적용한다.
+    /// - 만짐(Touch): 결과로 받으면(출구는 만져진다) 통과되는 대상도 그동안 부딪히는 몸이 된다.
+    ///   조건으로 쓰면(만지면) 그 대상이 벽·바닥을 포함해 무언가에 닿아 있는 동안 참이다.
+    ///   닿기 시작할 때와 모두 떨어질 때만, 그리고 '만지면' 문장이 있을 때만 규칙을 다시 적용한다.
+    /// - 닿으면 바꾸기(문장 틀에 {n@ac} 빈칸이 있는 문장. 예: 사람은 만지면 비둘기가 된다):
+    ///   첫 칸 대상에 지금 닿아 있는 다른 대상(벽·바닥 대상 포함)이 ac 칸의 효과를 받는다.
+    ///   명사면 닿은 대상이 그 태그로 영구 변신하고, 동사면 닿아 있는 동안만 그 상태가 된다.
+    ///   첫 칸 대상의 접촉이 바뀔 때만 규칙을 다시 적용한다.
     /// - 접촉: 조종 대상이 Win을 받은 대상에 닿으면 클리어
     /// 실행 중 인스펙터에서 문장 목록을 바꾸면 전체 규칙을 다시 적용한다.
     /// </summary>
@@ -61,6 +80,10 @@ namespace CoffeeSpec.Rules
         [SerializeField] private SpecPanel _specPanel;
         [Tooltip("리트할 때 Level을 다시 까는 로더. 비워 두면 씬에서 찾는다")]
         [SerializeField] private MapLoader _mapLoader;
+        [Tooltip("클리어하고 다음 스테이지로 넘어가기까지 기다리는 시간(초). 시간이 멈춰 있어도 흐른다")]
+        [SerializeField, Min(0f)] private float _nextStageDelay = 2f;
+        [Tooltip("다음 스테이지 씬이 없을 때 돌아갈 씬 이름")]
+        [SerializeField] private string _titleSceneName = "Title";
 
         private Dictionary<string, SentenceTemplate> _templates = new();
         private readonly List<Sentence> _sentences = new();
@@ -70,12 +93,17 @@ namespace CoffeeSpec.Rules
         private bool _started;
         private bool _rebuildPending;
         private bool _cleared;
+        private Coroutine _nextStageRoutine;
+        private bool _controlledDied;    // 이번 적용에서 조종받던 대상이 Die로 죽었는지
+        private bool _gameOver;          // You Die!가 떠 있는지
 
 
         private static readonly WordId Fly = new("Fly");
         private static readonly WordId Control = new("Control");
         private static readonly WordId Win = new("Win");
         private static readonly WordId Die = new("Die");
+        private static readonly WordId Tread = new("Tread");
+        private static readonly WordId Touch = new("Touch");
 
         /// <summary>스테이지를 클리어했을 때 알린다. 저장, 다음 스테이지 이동 등은 여기에 구독한다.</summary>
         public event Action Cleared;
@@ -136,6 +164,8 @@ namespace CoffeeSpec.Rules
         {
             if (_mapLoader == null) _mapLoader = FindAnyObjectByType<MapLoader>();
             _cleared = false;
+            _gameOver = false;
+            CancelNextStage();
             ClearScreen.Hide();
             // 다시 깔린 객체가 등록될 때 이전 문장으로 변신하지 않도록 문장부터 바꾼다
             FillSentences(sentences);
@@ -174,6 +204,8 @@ namespace CoffeeSpec.Rules
                 return;
             }
             _cleared = false;
+            _gameOver = false;
+            CancelNextStage();
             ClearScreen.Hide();
             LoadSetupSentences();
             _mapLoader.Reload();
@@ -245,8 +277,58 @@ namespace CoffeeSpec.Rules
             }
         }
 
-        // 이동 같은 지속 효과를 끈 뒤 문장을 다시 적용한다. 변신은 영구라 되돌리지 않는다
+        private bool _reapplying;
+        private bool _reapplyQueued;
+
+        // 이동 같은 지속 효과를 끈 뒤 문장을 다시 적용한다. 변신은 영구라 되돌리지 않는다.
+        // 적용하는 도중에 다시 요청이 오면(조종이 꺼져 움직임 상태가 풀리는 등) 끝난 뒤에 한 번 더 한다
         private void ReapplyAll()
+        {
+            if (_reapplying)
+            {
+                _reapplyQueued = true;
+                return;
+            }
+            _reapplying = true;
+            _controlledDied = false;
+            try
+            {
+                for (int i = 0; i < 4; i++)
+                {
+                    _reapplyQueued = false;
+                    ReapplyOnce();
+                    if (!_reapplyQueued) break;
+                }
+            }
+            finally
+            {
+                _reapplying = false;
+                _reapplyQueued = false;
+            }
+            // 사망하면 문장으로 되살아나 조종을 받을 수도 있으니 적용이 다 끝난 뒤에 따진다
+            CheckGameOver();
+        }
+
+        // 조종받던 대상이 죽고 조종받는 대상이 하나도 안 남았으면 You Die!를 띄운다.
+        // 문장이 빠져 조종이 풀린 것만으로는 죽은 게 아니라 띄우지 않는다. 리트(R)·빌드로 지운다
+        private void CheckGameOver()
+        {
+            bool anyControlled = false;
+            foreach (var _ in GetControlled()) { anyControlled = true; break; }
+
+            if (_gameOver && anyControlled)
+            {
+                // 죽은 뒤 되살아나 다시 조종을 받으면 지운다
+                _gameOver = false;
+                if (!_cleared) ClearScreen.Hide();
+                return;
+            }
+            if (_gameOver || _cleared || !_controlledDied || anyControlled) return;
+            _gameOver = true;
+            ClearScreen.ShowDeath();
+        }
+
+        private void ReapplyOnce()
         {
             foreach (var e in _entities) if (e != null) e.ResetState();
             // 변신을 먼저 해야 '사람은 비둘기다 + 비둘기는 움직인다'에서 바뀐 사람도 움직인다
@@ -265,6 +347,10 @@ namespace CoffeeSpec.Rules
         private readonly HashSet<RuleEntity> _flySet = new();
         private readonly HashSet<RuleEntity> _controlSet = new();
         private readonly HashSet<RuleEntity> _dieSet = new();
+        // 만져진다(Touch)를 받은 대상. 통과되는 대상도 이 동안은 부딪힌다
+        private readonly HashSet<RuleEntity> _touchSet = new();
+        // "밟히면" 조건 문장의 주어. 통과되는 대상도 이 동안은 부딪혀서 밟을 수 있게 한다
+        private readonly HashSet<RuleEntity> _treadableSet = new();
 
         private bool _conditionalTransformed;
 
@@ -276,17 +362,21 @@ namespace CoffeeSpec.Rules
             _flySet.Clear();
             _controlSet.Clear();
             _dieSet.Clear();
+            _touchSet.Clear();
             _winTargets.Clear();
 
             foreach (var s in _sentences)
-                if (!IsTransform(s) && ConditionSlot(s) < 0) ApplyEffect(s);
+                if (!IsTransform(s) && ConditionSlot(s) < 0 && AcSlot(s) < 0) ApplyEffect(s);
 
             // 조건이 다른 조건 문장의 결과에 기댈 수 있어서(날면 움직인다 + 움직이면 조종) 더 바뀌지 않을 때까지 몇 번 돈다
             for (int pass = 0; pass < 4; pass++)
             {
                 bool changed = false;
                 foreach (var s in _sentences)
+                {
                     if (ConditionSlot(s) >= 0) changed |= ApplyConditional(s);
+                    else if (AcSlot(s) >= 0) changed |= ApplyTouchSentence(s);
+                }
                 if (!changed) break;
             }
             return _conditionalTransformed;
@@ -296,12 +386,17 @@ namespace CoffeeSpec.Rules
         private void ApplyEffects()
         {
             // 사라지는 대상이 있으면 목록 순회 중에 상태가 바뀌므로 먼저 복사한다
+            CollectTreadable();
             foreach (var e in new List<RuleEntity>(_entities))
             {
                 if (e == null || e.IsRemoved) continue;
+                e.SetTreadable(_treadableSet.Contains(e));
+                e.SetTouchable(_touchSet.Contains(e));
                 // Die: 공격받았을 때처럼 숨기고 상호작용을 끈다. 영구라 문장이 빠져도 돌아오지 않는다
                 if (_dieSet.Contains(e))
                 {
+                    // 조종받던 대상이거나 이번에 조종을 받을 대상이면 플레이어가 죽은 것이다
+                    if (e.IsPlayer || _controlSet.Contains(e)) _controlledDied = true;
                     e.Remove();
                     continue;
                 }
@@ -312,10 +407,25 @@ namespace CoffeeSpec.Rules
             }
         }
 
+        // 변신까지 끝난 지금 태그 기준으로 "밟히면" 문장의 주어를 모은다. 주어가 없는 문장(밟히면 …)은 모든 대상이다
+        private void CollectTreadable()
+        {
+            _treadableSet.Clear();
+            foreach (var s in _sentences)
+            {
+                int condSlot = ConditionSlot(s);
+                if (condSlot < 0 || s.Words[condSlot] != Tread) continue;
+                bool hasSubject = condSlot > 0;
+                if (hasSubject && !WordTags.Is(s.Words[0], WordType.Noun)) continue;
+                foreach (var e in _entities)
+                    if (e != null && !e.IsRemoved && (!hasSubject || e.Id == s.Words[0])) _treadableSet.Add(e);
+            }
+        }
+
         // ---- 태그를 보고 효과를 정하는 부분. 새 효과는 여기에 추가한다 ----
 
         private static bool IsTransform(Sentence s) =>
-            s.Words.Count == 2 && ConditionSlot(s) < 0 &&
+            s.Words.Count == 2 && ConditionSlot(s) < 0 && AcSlot(s) < 0 &&
             WordTags.Is(s.Words[0], WordType.Noun) && WordTags.Is(s.Words[1], WordType.Noun);
 
         private void ApplyEffect(Sentence s)
@@ -335,17 +445,24 @@ namespace CoffeeSpec.Rules
             if (verb == Control) return _controlSet.Add(e);
             if (verb == Win) return _winTargets.Add(e);
             if (verb == Die) return _dieSet.Add(e);
+            if (verb == Touch) return _touchSet.Add(e);
             return false;
         }
 
         // 동사 조건: 그 대상이 지금 그 상태인지 (이번에 모으는 중인 효과 기준)
         private bool HasEffect(RuleEntity e, WordId verb)
         {
-            if (verb == WordId.Move) return _moveSet.Contains(e);
+            // 플레이어가 직접 움직이는 중이어도 움직이는 상태다
+            if (verb == WordId.Move) return _moveSet.Contains(e) || e.IsInputMoving;
             if (verb == Fly) return _flySet.Contains(e);
             if (verb == Control) return _controlSet.Contains(e);
             if (verb == Win) return _winTargets.Contains(e);
-            if (verb == Die) return _dieSet.Contains(e);
+            // 공격이나 이전 Die로 이미 죽은 대상도 사망 상태다
+            if (verb == Die) return e.IsRemoved || _dieSet.Contains(e);
+            // 밟힘은 조건으로만 쓴다: 다른 대상이 머리 위에 올라서 있는 동안 참
+            if (verb == Tread) return e.IsTreaded;
+            // 만짐은 조건일 때 '지금 무언가에 닿아 있다'는 뜻이다 (결과로 받은 만져진다와는 따로 본다)
+            if (verb == Touch) return e.IsTouched;
             return false;
         }
 
@@ -356,6 +473,56 @@ namespace CoffeeSpec.Rules
             for (int i = 0; i < s.Words.Count; i++)
                 if (string.Equals(s.Template.SlotForm(i), WordTags.IfForm, StringComparison.OrdinalIgnoreCase)) return i;
             return -1;
+        }
+
+        // 문장 틀에서 {n@ac}로 쓰인 빈칸 번호. 닿으면 바꾸는 문장이 아니면 -1
+        private static int AcSlot(Sentence s)
+        {
+            if (s.Template == null) return -1;
+            for (int i = 0; i < s.Words.Count; i++)
+                if (string.Equals(s.Template.SlotForm(i), WordTags.AcForm, StringComparison.OrdinalIgnoreCase)) return i;
+            return -1;
+        }
+
+        /// <summary>
+        /// 사람은 만지면 비둘기가 된다: 첫 칸(명사) 대상에 지금 닿아 있는 다른 대상이 ac 칸의 효과를 받는다.
+        /// 명사면 영구 변신, 동사면 이번 계산에서만 효과를 줘서 떨어지면 다음 적용 때 풀린다.
+        /// </summary>
+        /// <returns>새로 효과를 받은 대상이 있거나 변신이 일어났으면 true</returns>
+        private bool ApplyTouchSentence(Sentence s)
+        {
+            int acSlot = AcSlot(s);
+            if (acSlot <= 0 || !WordTags.Is(s.Words[0], WordType.Noun)) return false;
+            WordId subject = s.Words[0], word = s.Words[acSlot];
+            bool isNoun = WordTags.Is(word, WordType.Noun);
+            bool changed = false;
+            var touchers = new List<RuleEntity>();
+
+            // 변신하면 목록이 달라지므로 먼저 복사한다
+            foreach (var e in new List<RuleEntity>(_entities))
+            {
+                if (e == null || e.IsRemoved || e.Id != subject) continue;
+                touchers.Clear();
+                e.GetTouchingEntities(touchers);
+                foreach (var t in touchers)
+                {
+                    if (t.IsRemoved) continue;
+                    if (isNoun)
+                    {
+                        if (t.Id == word) continue;
+                        var source = FindOriginalEntity(word);
+                        if (source == null) continue;
+                        t.TransformInto(word, source);
+                        _conditionalTransformed = true;
+                        changed = true;
+                    }
+                    else
+                    {
+                        changed |= AddEffect(t, word);
+                    }
+                }
+            }
+            return changed;
         }
 
         private static bool IsConditionMet(RuleEntity e, WordId condition, RuleManager self) =>
@@ -378,7 +545,9 @@ namespace CoffeeSpec.Rules
             // 변신하면 목록이 달라지므로 먼저 복사한다
             foreach (var e in new List<RuleEntity>(_entities))
             {
-                if (e == null || e.IsRemoved) continue;
+                if (e == null) continue;
+                // 사망한 대상은 "사망하면" 조건에만 걸린다 (변신하면 그 모습으로 다시 살아난다)
+                if (e.IsRemoved && condition != Die) continue;
                 if (hasSubject && e.Id != subject) continue;
                 if (!IsConditionMet(e, condition, this)) continue;
 
@@ -435,10 +604,44 @@ namespace CoffeeSpec.Rules
 
         private void Clear()
         {
-            if (_cleared) return;
+            if (_cleared || _gameOver) return;
             _cleared = true;
             ClearScreen.Show();
             Cleared?.Invoke();
+            CancelNextStage();
+            _nextStageRoutine = StartCoroutine(GoToNextStage());
+        }
+
+        // 리트나 미리보기로 판이 다시 시작되면 넘어가지 않는다
+        private void CancelNextStage()
+        {
+            if (_nextStageRoutine == null) return;
+            StopCoroutine(_nextStageRoutine);
+            _nextStageRoutine = null;
+        }
+
+        private IEnumerator GoToNextStage()
+        {
+            yield return new WaitForSecondsRealtime(_nextStageDelay);
+            _nextStageRoutine = null;
+            SceneFader.LoadScene(NextSceneName());
+        }
+
+        /// <summary>
+        /// 지금 씬 이름의 마지막 숫자를 하나 올린 씬 (Stage1Scene → Stage2Scene).
+        /// 숫자가 없거나 그 씬이 Build Settings에 없으면 타이틀 씬.
+        /// </summary>
+        private string NextSceneName()
+        {
+            string current = SceneManager.GetActiveScene().name;
+            var match = Regex.Match(current, @"(\d+)(?!.*\d)");
+            if (match.Success && int.TryParse(match.Value, out int number))
+            {
+                string next = current.Substring(0, match.Index) + (number + 1) + current.Substring(match.Index + match.Length);
+                if (Application.CanStreamedLevelBeLoaded(next)) return next;
+                Debug.Log($"[RuleManager] 다음 스테이지 씬 '{next}'이 Build Settings에 없어 {_titleSceneName}(으)로 돌아감");
+            }
+            return _titleSceneName;
         }
 
         // ---- 대상 관리 ----
@@ -466,6 +669,53 @@ namespace CoffeeSpec.Rules
         }
 
         public void Unregister(RuleEntity entity) => _entities.Remove(entity);
+
+        /// <summary>공격으로 대상이 죽었다. Die 문장으로 죽은 것처럼 "사망하면" 조건을 다시 따진다.</summary>
+        public void NotifyDied(RuleEntity entity)
+        {
+            if (_started) ReapplyAll();
+        }
+
+        /// <summary>누가 머리 위에 올라섰거나 내려갔다. "밟히면" 조건을 다시 따진다.</summary>
+        public void NotifyTreadChanged(RuleEntity entity)
+        {
+            if (_started) ReapplyAll();
+        }
+
+        /// <summary>
+        /// 닿은 콜라이더가 늘거나 줄었다. touchedChanged는 '닿아 있음'이 바뀌었는지.
+        /// '만지면' 조건이 바뀌었거나, 이 대상이 닿으면 바꾸는 문장의 첫 칸일 때만 다시 따진다.
+        /// </summary>
+        public void NotifyTouchChanged(RuleEntity entity, bool touchedChanged)
+        {
+            if (!_started) return;
+            if ((touchedChanged && UsesCondition(Touch)) || IsTouchSubject(entity.Id)) ReapplyAll();
+        }
+
+        // 이 태그를 첫 칸으로 쓴 닿으면 바꾸는 문장이 있는지
+        private bool IsTouchSubject(WordId id)
+        {
+            foreach (var s in _sentences)
+                if (AcSlot(s) > 0 && s.Words[0] == id) return true;
+            return false;
+        }
+
+        // 그 단어를 조건 칸에 쓴 문장이 있는지. 없으면 접촉이 바뀌어도 다시 적용할 필요가 없다
+        private bool UsesCondition(WordId word)
+        {
+            foreach (var s in _sentences)
+            {
+                int condSlot = ConditionSlot(s);
+                if (condSlot >= 0 && s.Words[condSlot] == word) return true;
+            }
+            return false;
+        }
+
+        /// <summary>플레이어가 움직이기 시작했거나 멈췄다. "움직이면" 조건을 다시 따진다.</summary>
+        public void NotifyInputMovingChanged(RuleEntity entity)
+        {
+            if (_started) ReapplyAll();
+        }
 
         // 공격으로 사라진 대상은 규칙 효과를 받지 않는다. 변신 원본 찾기(FindOriginalEntity)에서는 그대로 쓴다
         public IEnumerable<RuleEntity> GetEntities(WordId id)
