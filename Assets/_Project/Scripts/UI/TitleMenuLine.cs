@@ -1,3 +1,4 @@
+﻿using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
@@ -48,15 +49,65 @@ namespace CoffeeSpec.UI
         [SerializeField, Min(0)] private int _blinkCount = 2;
         [SerializeField, Min(0.01f)] private float _blinkInterval = 0.07f;
 
+        // 선택된 줄 앞에 붙는 표시. 씬에서 _code가 이 표시로 시작하는 줄(StartGame)이 처음 선택된 줄이 된다
+        private const string Marker = "\u25B6 ";
+
+        private static TitleMenuLine s_selected;
+        private static event Action SelectionChanged;
+
         private bool _hovered;
         private bool _lastLocked;
         private bool _initialized;
         private Coroutine _running;
 
         private bool IsLocked => _targetButton == null || !_targetButton.interactable;
+        private bool IsSelected => s_selected == this;
+
+        private void Awake()
+        {
+            // 표시는 선택에 따라 붙였다 뗐다 하므로 문구에서는 빼 둔다
+            bool startsSelected = StripMarker(ref _code);
+            StripMarker(ref _lockedCode);
+            if (startsSelected && s_selected == null)
+            {
+                s_selected = this;
+            }
+        }
+
+        private void OnDestroy()
+        {
+            // 씬을 다시 열면 처음 선택된 줄(StartGame)부터 다시 시작하도록 비운다
+            if (s_selected == this)
+            {
+                s_selected = null;
+            }
+        }
+
+        private static bool StripMarker(ref string code)
+        {
+            if (code != null && code.StartsWith(Marker, StringComparison.Ordinal))
+            {
+                code = code.Substring(Marker.Length);
+                return true;
+            }
+            return false;
+        }
+
+        private static void Select(TitleMenuLine line)
+        {
+            if (s_selected == line)
+            {
+                return;
+            }
+            s_selected = line;
+            SelectionChanged?.Invoke();
+        }
+
+        private void OnSelectionChanged() => Refresh(force: true);
 
         private void OnEnable()
         {
+            SelectionChanged += OnSelectionChanged;
             _hovered = false;
             if (_caret != null)
             {
@@ -67,6 +118,7 @@ namespace CoffeeSpec.UI
 
         private void OnDisable()
         {
+            SelectionChanged -= OnSelectionChanged;
             if (_running != null)
             {
                 StopCoroutine(_running);
@@ -110,6 +162,8 @@ namespace CoffeeSpec.UI
             {
                 return;
             }
+            // 누른 줄 앞으로 ▶ 표시를 옮긴 뒤 실행 연출을 시작한다
+            Select(this);
             _running = StartCoroutine(ExecuteRoutine());
         }
 
@@ -126,7 +180,8 @@ namespace CoffeeSpec.UI
             bool hot = _hovered && !locked;
             if (_codeText != null)
             {
-                _codeText.text = _indent + (locked ? _lockedCode : _code);
+                string marker = IsSelected && !locked ? Marker : string.Empty;
+                _codeText.text = _indent + marker + (locked ? _lockedCode : _code);
                 _codeText.color = locked ? _lockedColor : (hot ? _hoverColor : _normalColor);
             }
             if (_lineNumberText != null)

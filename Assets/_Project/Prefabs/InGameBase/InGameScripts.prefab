@@ -103,8 +103,18 @@ MonoBehaviour:
     - _value: Person
     Words: 
     Preview: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
+  _innateEffects:
+  - Noun:
+      _value: Exit
+    Verbs:
+    - _value: Win
+  - Noun:
+      _value: Person
+    Verbs:
+    - _value: Control
   _specPanel: {fileID: 0}
   _mapLoader: {fileID: 0}
+  _transformPrefabs: []
 --- !u!1 &4850396206242732975
 GameObject:
   m_ObjectHideFlags: 0

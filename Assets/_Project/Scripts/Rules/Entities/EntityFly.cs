@@ -50,18 +50,22 @@ namespace CoffeeSpec.Rules.Entities
             // 문장을 다시 적용할 때는 같은 프레임에 껐다 켜진다. 이때는 높이를 새로 고르지 않고 하던 대로 둥실거린다
             if (_flyOffFrame == Time.frameCount) return;
 
-            float height = Random.Range(Mathf.Min(_owner.FlyHeightRange.x, _owner.FlyHeightRange.y), Mathf.Max(_owner.FlyHeightRange.x, _owner.FlyHeightRange.y));
-            _flyBaseY = _rigidbody.position.y - DistanceToGround() + height;
+            // 맵에서 이 모습의 높이를 정해 뒀으면 그걸 쓴다. 변신한 대상도 지금 모습 기준이라 같은 높이로 난다
+            float height = LevelSettings.TryGetFlyHeight(_owner.Id, out float mapHeight)
+                ? mapHeight
+                : Random.Range(Mathf.Min(_owner.FlyHeightRange.x, _owner.FlyHeightRange.y), Mathf.Max(_owner.FlyHeightRange.x, _owner.FlyHeightRange.y));
+            // 공중에서 날기 시작해도 바닥을 찾도록, 높게 나는 맵에서는 찾는 거리도 높이만큼 늘린다
+            _flyBaseY = _rigidbody.position.y - DistanceToGround(Mathf.Max(_owner.FlyGroundSearchDistance, height + 10f)) + height;
             _bobPhase = Random.Range(0f, Mathf.PI * 2f);
             _flyTime = 0f;
         }
 
         // 발밑 바닥까지의 거리. 바닥이 없으면 0 (지금 위치를 바닥으로 본다)
-        private float DistanceToGround()
+        private float DistanceToGround(float searchDistance)
         {
             if (_collider == null) return 0f;
             float best = float.MaxValue;
-            int count = _collider.Cast(Vector2.down, EntityMotor.GroundHits, _owner.FlyGroundSearchDistance);
+            int count = _collider.Cast(Vector2.down, EntityMotor.GroundHits, searchDistance);
             for (int i = 0; i < count; i++)
             {
                 var hit = EntityMotor.GroundHits[i];
@@ -77,6 +81,10 @@ namespace CoffeeSpec.Rules.Entities
             _flyTime += Time.fixedDeltaTime;
             float targetY = _flyBaseY + Mathf.Sin(_flyTime * Mathf.PI * 2f / _owner.BobPeriod + _bobPhase) * _owner.BobAmplitude;
             float vy = Mathf.Clamp((targetY - _rigidbody.position.y) * _owner.FlyFollowStrength, -_owner.FlyMaxSpeed, _owner.FlyMaxSpeed);
+            // 목표가 천장보다 높으면 매 프레임 천장을 밀어 올려 몸이 천장 타일에 박힌다. 그러면 타일 이음매에 걸려
+            // 가로로 못 가서 Move가 막힌 줄 알고 계속 돌아선다(왔다갔다). 천장 바로 아래까지만 올라가게 한다
+            if (vy > 0f && _collider != null && !_collider.isTrigger)
+                vy = _owner.Motor.LimitBySolid(Vector2.up, vy * Time.fixedDeltaTime) / Time.fixedDeltaTime;
             _rigidbody.linearVelocity = new Vector2(_rigidbody.linearVelocity.x, vy);
         }
     }

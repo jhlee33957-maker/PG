@@ -5,20 +5,17 @@ using UnityEngine.UI;
 namespace CoffeeSpec.UI
 {
     /// <summary>
-    /// 화면 가운데에 Clear!나 You Die!를 띄운다. 씬마다 UI를 미리 둘 필요 없게 처음 호출될 때 만든다.
-    /// 둘은 같은 자리를 써서 하나만 떠 있다.
+    /// 화면 가운데에 Clear!를 띄운다. 씬마다 UI를 미리 둘 필요 없게 처음 호출될 때 만든다.
     /// </summary>
     public static class ClearScreen
     {
         private const string Message = "Clear!";
-        private const string DeathMessage = "You Die!";
-        private const string DeathSubMessage = "Press to R Key Restart Game";
         private const float FontSize = 120f;
         private const float SubFontSize = 48f;
 
         private static GameObject _current;
 
-        /// <summary>떠 있는 Clear!나 You Die!를 지운다. 리트할 때 쓴다.</summary>
+        /// <summary>떠 있는 Clear!를 지운다. 리트할 때 쓴다.</summary>
         public static void Hide()
         {
             if (_current != null) UnityEngine.Object.Destroy(_current);
@@ -27,8 +24,6 @@ namespace CoffeeSpec.UI
 
         public static void Show() => ShowMessage(Message, null);
 
-        /// <summary>조종하는 대상이 모두 죽었을 때. Clear!만큼 크게 띄우고 밑에 리트 안내를 작게 적는다.</summary>
-        public static void ShowDeath() => ShowMessage(DeathMessage, DeathSubMessage);
 
         private static void ShowMessage(string message, string subMessage)
         {

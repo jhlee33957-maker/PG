@@ -7,7 +7,7 @@ using UnityEngine.SceneManagement;
 
 namespace CoffeeSpec.Core
 {
-    /// <summary>규칙의 결과 이벤트를 받아 클리어·사망 화면과 스테이지 이동만 맡는다.</summary>
+    /// <summary>규칙의 결과 이벤트를 받아 클리어 화면과 스테이지 이동만 맡는다.</summary>
     public sealed class GameManager : MonoBehaviour
     {
         [Tooltip("규칙 관리자. 비워 두면 씬에서 찾는다")]
@@ -24,6 +24,15 @@ namespace CoffeeSpec.Core
         private bool _warnedMissing;
 
         private void Awake() => ResolveManager();
+
+        // 스테이지에 들어오면 타이틀의 "게임 시작"이 이 스테이지로 이어지도록 기록한다
+        private void Start()
+        {
+            if (StageScenes.TryGetStageNumber(SceneManager.GetActiveScene().name, out int stageNumber))
+            {
+                SaveDataStore.RecordStageEntered(stageNumber);
+            }
+        }
 
         private void OnEnable()
         {
@@ -83,6 +92,7 @@ namespace CoffeeSpec.Core
         {
             if (_cleared || _gameOver) return;
             _cleared = true;
+            RecordClear();
             ClearScreen.Show();
             CancelNextStage();
             _nextStageRoutine = StartCoroutine(GoToNextStage());
@@ -90,10 +100,8 @@ namespace CoffeeSpec.Core
 
         private void OnControlledDeathChanged(bool allDead)
         {
+            // 사망 문구는 띄우지 않는다. 조종 대상이 없는 동안은 카메라를 방향키로 움직여 맵을 볼 수 있다
             _gameOver = allDead;
-            if (_cleared) return;
-            if (allDead) ClearScreen.ShowDeath();
-            else ClearScreen.Hide();
         }
 
         private void OnReset()
@@ -116,6 +124,20 @@ namespace CoffeeSpec.Core
             yield return new WaitForSecondsRealtime(_nextStageDelay);
             _nextStageRoutine = null;
             SceneFader.LoadScene(NextSceneName());
+        }
+
+        // 클리어 기록을 남겨 타이틀의 스테이지 선택 해제와 게임 시작(이어서 하기)에 반영한다.
+        // 다음 스테이지 씬이 없으면 마지막 스테이지 = 엔딩으로 본다.
+        private void RecordClear()
+        {
+            string current = SceneManager.GetActiveScene().name;
+            if (!StageScenes.TryGetStageNumber(current, out int stageNumber))
+            {
+                return;
+            }
+
+            bool isLastStage = !Application.CanStreamedLevelBeLoaded(StageScenes.GetSceneName(stageNumber + 1));
+            SaveDataStore.RecordStageCleared(stageNumber, isLastStage);
         }
 
         // 마지막 숫자를 하나 올린 씬이 없으면 타이틀로 돌아간다.

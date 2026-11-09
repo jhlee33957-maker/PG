@@ -121,7 +121,7 @@ Rigidbody2D:
   m_Interpolate: 0
   m_SleepingMode: 1
   m_CollisionDetection: 0
-  m_Constraints: 0
+  m_Constraints: 4
 --- !u!114 &-6313183252991738806
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -138,7 +138,6 @@ MonoBehaviour:
     _value: Monster
   _id: -1
   _moveSpeed: 2
-  _directionInterval: 1
   _colliderCornerRadius: 0.02
   _groundSnapDistance: 0.1
   _sinkTolerance: 0.03

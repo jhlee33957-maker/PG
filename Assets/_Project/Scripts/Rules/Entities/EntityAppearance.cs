@@ -48,12 +48,23 @@ namespace CoffeeSpec.Rules.Entities
         internal void TransformInto(WordId id, RuleEntity source)
         {
             if (source == null) return;
+            // 방금 변신했으면 잠깐은 다시 바뀌지 않는다
+            if (!_owner.CanTransform) return;
             // 사망한 대상이 변신하면 새 모습으로 다시 살아난다 (사망 상태는 넘어가지 않는다)
-            if (_owner.IsRemoved) _owner.Revive();
+            bool revived = _owner.IsRemoved;
+            if (revived) _owner.Revive();
             _owner.Word = id;
+            // 무적은 살아난 직후 같은 가시에 또 죽지 않게 하려는 것이다. 살아 있는 채로 번갈아 변신할 때까지 주면 계속 무적이 되어 죽지 않는다
+            if (revived) _owner.StartTransformInvincible();
+            RuleManager.Trace($"TransformInto {_owner.name} -> {id} revived={revived} pos={_owner.transform.position}"); // TEMP TRACE
+            _owner.StartTransformLock();
 
             // 발 위치를 유지해야 커진 콜라이더가 바닥에 박히지 않는다
             float oldBottom = _collider != null ? _collider.bounds.min.y : _owner.transform.position.y;
+            // 발을 맞춘 채 키가 커지면 머리가 위로 자란다. 천장 바로 아래에서 그러면 머리가 천장에 깊이 박히고,
+            // 물리 엔진이 덜 박힌 쪽(천장 위)으로 밀어내서 천장을 뚫고 올라간다. 바뀌기 전에 머리 위 여유를 재 둔다
+            float oldTop = _collider != null ? _collider.bounds.max.y : 0f;
+            float headroom = _collider != null ? _owner.Motor.LimitBySolid(Vector2.up, 10f) : 0f;
 
             _renderer.sprite = source.Appearance.OriginalSprite;
             _renderer.drawMode = source.Appearance.OriginalDrawMode;
@@ -70,6 +81,9 @@ namespace CoffeeSpec.Rules.Entities
             {
                 Physics2D.SyncTransforms();
                 float diff = oldBottom - _collider.bounds.min.y;
+                // 머리가 천장을 넘으면 넘는 만큼 아래로 내린다 (천장 바로 아래에 머리를 맞춘다)
+                float rise = _collider.bounds.max.y + diff - oldTop;
+                if (rise > headroom) diff -= rise - headroom;
                 _rigidbody.position += new Vector2(0f, diff);
                 _owner.transform.position += new Vector3(0f, diff, 0f);
             }
