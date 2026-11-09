@@ -108,9 +108,17 @@ namespace CoffeeSpec.Cameras
             }
             else
             {
-                if (!TryGetControlledBounds(out Bounds group)) return;
+                if (!TryGetControlledBounds(out Bounds group))
+                {
+                    UpdateFreeLook();
+                    return;
+                }
+                _freeLooking = false;
                 target = new Vector3(group.center.x + _offset.x, group.center.y + _offset.y, _homePosition.z);
                 targetSize = SizeToFit(group);
+                // 조종 대상이 사라지면 이 자리에서 둘러보기를 시작한다
+                _lastFollowTarget = target;
+                _hasLastFollowTarget = true;
                 smoothTime = _followSmoothTime;
             }
 
@@ -120,6 +128,46 @@ namespace CoffeeSpec.Cameras
             // 기획서가 열려 있으면 timeScale이 0이라 실제 시간으로 움직인다
             _smoothPosition = Vector3.SmoothDamp(_smoothPosition, target, ref _velocity,
                 smoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
+            transform.position = SnapToPixel(_smoothPosition);
+        }
+
+        // 조종할 수 있는 대상이 없으면(모두 죽었을 때 등) 방향키로 카메라를 움직여 맵을 둘러본다
+        private bool _freeLooking;
+        private bool _freeLookMoved;
+        private Vector3 _lastFollowTarget;
+        private bool _hasLastFollowTarget;
+        private void UpdateFreeLook()
+        {
+            if (!_freeLooking)
+            {
+                _freeLooking = true;
+                _freeLookMoved = false;
+                RecalculatePanBounds();
+                // 카메라는 살짝 늦게 따라가므로, 죽는 순간 멈추면 캐릭터가 화면 중앙이 아니다.
+                // 마지막으로 비추려던 자리까지는 이어서 가야 자연스럽고, 그 자리가 범위 밖이라고 튀지 않게 범위에 넣는다
+                if (_hasPanBounds && _hasLastFollowTarget)
+                {
+                    Vector2 half = GetHalfViewSize();
+                    _panBounds.Encapsulate(new Vector3(_lastFollowTarget.x - half.x, _lastFollowTarget.y - half.y, 0f));
+                    _panBounds.Encapsulate(new Vector3(_lastFollowTarget.x + half.x, _lastFollowTarget.y + half.y, 0f));
+                }
+            }
+
+            Vector3 pan = ReadKeyboardPan();
+            if (pan != Vector3.zero) _freeLookMoved = true;
+
+            if (!_freeLookMoved && _hasLastFollowTarget)
+            {
+                // 키를 누르기 전까지는 원래 따라가던 방식 그대로 마지막 자리로 다가간다
+                _smoothPosition = Vector3.SmoothDamp(_smoothPosition, _lastFollowTarget, ref _velocity,
+                    _followSmoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
+            }
+            else
+            {
+                _velocity = Vector3.zero;
+                _smoothPosition += pan * Time.unscaledDeltaTime;
+                _smoothPosition = ClampToPanBounds(_smoothPosition);
+            }
             transform.position = SnapToPixel(_smoothPosition);
         }
 

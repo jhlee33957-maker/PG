@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Text;
 using System.Text.RegularExpressions;
+using CoffeeSpec.Core;
 using CoffeeSpec.Rules;
 using CoffeeSpec.Spec;
 using TMPro;
@@ -69,6 +70,22 @@ namespace CoffeeSpec.UI
         [Header("스테이지 보기")]
         [Tooltip("미리보기 버튼 (Button_PreView). 기획서를 접고 펼친다. 접으면 레벨을 초기화하고 규칙이 하나도 없는 상태로 시간이 흐르며, 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
         [SerializeField] private Button _btnPreview;
+        [Tooltip("리셋 버튼 (BTN_Reset, 미리보기 버튼 왼쪽). 고정 단어를 뺀 모든 단어를 하단 단어 바로 돌려보낸다. 본문이 펼쳐져 있을 때만 보인다")]
+        [SerializeField] private Button _btnReset;
+
+        [Header("스테이지 표시 (탭·파일 목록)")]
+        [Tooltip("위쪽 설정 탭 글자. 스테이지 N이면 stage_0N.config로 바뀐다")]
+        [SerializeField] private TMP_Text _configTabLabel;
+        [Tooltip("파일 목록에서 펼쳐진 스테이지 폴더 줄. 지금 스테이지 위치로 옮겨진다")]
+        [SerializeField] private RectTransform _currentStageRow;
+        [Tooltip("펼쳐진 스테이지 폴더 이름 글자. 스테이지 N이면 StageN")]
+        [SerializeField] private TMP_Text _currentStageLabel;
+        [Tooltip("펼쳐진 폴더 안의 파일 줄들 (rules.json, stage0N.config). 폴더 줄 바로 아래에 같이 옮겨진다")]
+        [SerializeField] private RectTransform[] _currentStageFileRows;
+        [Tooltip("펼쳐진 폴더 안의 설정 파일 글자. 스테이지 N이면 stage0N.config")]
+        [SerializeField] private TMP_Text _configFileLabel;
+        [Tooltip("접힌 다른 스테이지 폴더 줄들 (위에서부터 순서대로). 지금 스테이지를 뺀 나머지 번호가 차례로 들어간다")]
+        [SerializeField] private RectTransform[] _otherStageRows;
 
         [Header("빈칸 상자")]
         [Tooltip("빈칸 뒤에 깔리는 상자 (UI_RoundRect_Fill, 9-slice). 비우면 각진 상자")]
@@ -191,6 +208,9 @@ namespace CoffeeSpec.UI
 
         private void Start()
         {
+            // 기획 데이터와 상관없는 장식 글자라서, 참조가 빠져 기획서가 안 열려도 먼저 맞춰 둔다
+            ApplyStageLabels();
+
             if (!Initialize())
             {
                 return;
@@ -222,6 +242,106 @@ namespace CoffeeSpec.UI
             {
                 Time.timeScale = 1f;
                 IsAnyOpen = false;
+            }
+        }
+
+        // ---------------- 스테이지 표시 ----------------
+
+        /// <summary>
+        /// 탭과 파일 목록의 글자를 지금 스테이지에 맞춘다. 프리팹은 Stage1 기준으로 만들어져 있어서
+        /// 씬 이름(Stage2Scene 등)에서 번호를 읽어 실행 중에 바꾼다. 씬마다 따로 설정할 필요가 없게 하려는 것.
+        /// 파일 목록은 1부터 (접힌 폴더 수 + 1)번까지 순서대로 보이고, 지금 스테이지만 펼쳐진다.
+        /// </summary>
+        private void ApplyStageLabels()
+        {
+            if (!StageScenes.TryGetStageNumber(gameObject.scene.name, out int stage))
+            {
+                return;   // 스테이지 씬이 아니면 (테스트 씬 등) 프리팹 글자 그대로 둔다
+            }
+
+            string number = stage.ToString("00");
+            if (_configTabLabel != null)
+            {
+                _configTabLabel.text = $"stage_{number}.config";
+            }
+            if (_configFileLabel != null)
+            {
+                _configFileLabel.text = $"stage{number}.config";
+            }
+            if (_currentStageLabel != null)
+            {
+                _currentStageLabel.text = $"Stage{stage}";
+            }
+
+            if (_currentStageRow == null)
+            {
+                return;
+            }
+
+            // 접힌 폴더에 넣을 번호: 지금 스테이지를 뺀 나머지를 1부터 차례로
+            int otherCount = _otherStageRows != null ? _otherStageRows.Length : 0;
+            var otherNumbers = new List<int>(otherCount);
+            for (int n = 1; otherNumbers.Count < otherCount; n++)
+            {
+                if (n != stage)
+                {
+                    otherNumbers.Add(n);
+                }
+            }
+
+            // 줄 순서: 지금보다 앞 번호 폴더 → 펼친 폴더 + 그 안 파일들 → 뒤 번호 폴더
+            var order = new List<RectTransform>();
+            for (int i = 0; i < otherCount; i++)
+            {
+                if (otherNumbers[i] < stage)
+                {
+                    order.Add(_otherStageRows[i]);
+                }
+            }
+            order.Add(_currentStageRow);
+            if (_currentStageFileRows != null)
+            {
+                order.AddRange(_currentStageFileRows);
+            }
+            for (int i = 0; i < otherCount; i++)
+            {
+                if (otherNumbers[i] > stage)
+                {
+                    order.Add(_otherStageRows[i]);
+                }
+            }
+
+            // 다른 줄들 사이 시작 위치는 이 줄들 중 가장 앞에 있던 자리
+            int baseIndex = int.MaxValue;
+            foreach (RectTransform row in order)
+            {
+                if (row != null && row.parent == _currentStageRow.parent)
+                {
+                    baseIndex = Mathf.Min(baseIndex, row.GetSiblingIndex());
+                }
+            }
+
+            int index = baseIndex;
+            foreach (RectTransform row in order)
+            {
+                if (row == null || row.parent != _currentStageRow.parent)
+                {
+                    continue;
+                }
+                row.SetSiblingIndex(index++);
+            }
+
+            for (int i = 0; i < otherCount; i++)
+            {
+                if (_otherStageRows[i] == null)
+                {
+                    continue;
+                }
+                TMP_Text label = _otherStageRows[i].GetComponentInChildren<TMP_Text>(true);
+                if (label != null)
+                {
+                    label.text = $"Stage{otherNumbers[i]}";
+                }
             }
         }
 
@@ -313,6 +433,10 @@ namespace CoffeeSpec.UI
             if (_btnPreview != null)
             {
                 _btnPreview.onClick.AddListener(() => SetStageView(!IsViewingStage));
+            }
+            if (_btnReset != null)
+            {
+                _btnReset.onClick.AddListener(ResetWords);
             }
 
             return true;
@@ -490,6 +614,7 @@ namespace CoffeeSpec.UI
             _wordLayer.gameObject.SetActive(true);
             SetRetryButtonVisible(false);
             SetPreviewButtonVisible(true);
+            SetResetButtonVisible(true);
 
             RefreshAll();
         }
@@ -509,6 +634,7 @@ namespace CoffeeSpec.UI
             _documentRoot.SetActive(false);
             SetRetryButtonVisible(true);
             SetPreviewButtonVisible(false);
+            SetResetButtonVisible(false);
         }
 
         /// <summary>
@@ -530,6 +656,8 @@ namespace CoffeeSpec.UI
             _documentRoot.SetActive(!viewing);
             _optionBar.SetActive(!viewing);
             _wordLayer.gameObject.SetActive(!viewing);
+            // 접힌 동안에는 뺄 단어가 안 보이므로 리셋 버튼도 숨긴다
+            SetResetButtonVisible(!viewing);
 
             if (viewing)
             {
@@ -553,6 +681,48 @@ namespace CoffeeSpec.UI
             }
         }
 
+        private void SetResetButtonVisible(bool visible)
+        {
+            if (_btnReset != null)
+            {
+                _btnReset.gameObject.SetActive(visible);
+            }
+        }
+
+        /// <summary>
+        /// 빈칸에 든 단어와 화면에 꺼내 놓은 칩을 모두 하단 단어 바로 돌려보낸다.
+        /// 고정 단어(StageSpec에서 "!")는 플레이어가 옮길 수 없는 단어라 그대로 둔다.
+        /// </summary>
+        private void ResetWords()
+        {
+            if (!IsOpen || IsViewingStage)
+            {
+                return;
+            }
+
+            CancelDrag();
+
+            for (int blank = 0; blank < _blankToOption.Length; blank++)
+            {
+                if (!_lockedBlanks[blank])
+                {
+                    ClearBlank(blank);
+                }
+            }
+
+            // 바에 넣는 순서가 단어 묶음 순서와 맞도록 앞 번호부터 돌려보낸다
+            for (int option = 0; option < _optionButtons.Count; option++)
+            {
+                int blank = _optionToBlank[option];
+                if (blank >= 0 && _lockedBlanks[blank])
+                {
+                    continue;
+                }
+                ReturnToBar(option);
+            }
+
+            RefreshAll();
+        }
         private void SetRetryButtonVisible(bool visible)
         {
             if (_btnRetry != null)

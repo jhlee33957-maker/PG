@@ -10,6 +10,8 @@ namespace CoffeeSpec.Rules.Entities
         private static readonly RaycastHit2D[] _solidHits = new RaycastHit2D[8];
         // 고정물 앞에서 멈출 때 남겨 두는 틈. 딱 붙이면 다음 검사에서 겹친 것으로 잡혀 떨린다
         private const float SolidSkin = 0.01f;
+        // 가로 이동 중 이 높이 안쪽으로 발밑보다 낮거나 살짝 높은 윗면은 바닥 이음매로 보고 막지 않는다
+        private const float FloorSeamStep = 0.05f;
         private static PhysicsMaterial2D _noFriction;
         private static readonly System.Collections.Generic.List<Collider2D> _overlaps = new();
         // 겹친 상대와 가로로 내 폭의 이 비율보다 덜 겹치면 옆에 붙은 벽으로 보고 위로 빼내지 않는다
@@ -268,6 +270,11 @@ namespace CoffeeSpec.Rules.Entities
                 if (body != null && body.bodyType != RigidbodyType2D.Static) continue;
                 // 가는 방향을 마주 보는 면만 막는다. 발밑 바닥처럼 이미 닿아 있는 면에서 옆이나 위로 갈 때는 막지 않는다
                 if (Vector2.Dot(hit.normal, dir) > -0.5f) continue;
+                // 가로로 갈 때 윗면이 내 발높이 근처인 고정물은 벽이 아니라 옆 바닥 타일이다. 몸이 바닥에 살짝 박혀 있으면
+                // 다음 타일의 옆면이 앞을 막는 면으로 잡혀 이음매에서 멈추므로 막지 않는다
+                if (axis.y == 0f && other.bounds.max.y <= _collider.bounds.min.y + FloorSeamStep) continue;
+                // 천장도 같다. 날면서 천장에 붙어 있으면 몸이 천장에 살짝 박혀서 옆 천장 타일의 옆면이 앞을 막는다
+                if (axis.y == 0f && other.bounds.min.y >= _collider.bounds.max.y - FloorSeamStep) continue;
                 allowed = Mathf.Min(allowed, Mathf.Max(0f, hit.distance - SolidSkin));
             }
             return Mathf.Sign(move) * allowed;

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -7,7 +7,7 @@ using UnityEngine;
 namespace CoffeeSpec.Core
 {
     /// <summary>
-    /// SaveData.csv 읽기. 쓰기는 세이브 기능을 구현할 때 추가한다.
+    /// SaveData.csv 읽기와 쓰기.
     ///
     /// 위치: Application.persistentDataPath/SaveData.csv
     ///   (Resources 폴더는 빌드 후 읽기 전용이라 세이브 파일을 둘 수 없다)
@@ -16,6 +16,8 @@ namespace CoffeeSpec.Core
     ///   Key,Value
     ///   LastPlayedStage,2
     ///   HighestClearedStage,1
+    ///
+    /// 언제 무엇을 기록하는지는 docs/decisions/003-save-data-and-stage-unlock.md의 "세이브를 쓰는 쪽이 지킬 규칙".
     /// </summary>
     public static class SaveDataStore
     {
@@ -33,6 +35,82 @@ namespace CoffeeSpec.Core
         /// </summary>
         public static SaveData Load()
         {
+            SaveData save = LoadRaw();
+            if (save == null)
+            {
+                return null;
+            }
+
+            if (save.LastPlayedStage == 0 && save.HighestClearedStage == 0)
+            {
+                Debug.LogWarning($"[SaveDataStore] 플레이 기록과 클리어 기록이 모두 없어 기록 없음으로 처리합니다: {FilePath}");
+                return null;
+            }
+            return save;
+        }
+
+        /// <summary>스테이지에 들어갈 때: 마지막 플레이 스테이지를 그 번호로 기록한다.</summary>
+        public static void RecordStageEntered(int stageNumber)
+        {
+            if (stageNumber < 1)
+            {
+                return;
+            }
+
+            SaveData current = LoadRaw();
+            int highestCleared = current?.HighestClearedStage ?? 0;
+            Write(new SaveData(stageNumber, highestCleared));
+        }
+
+        /// <summary>
+        /// 스테이지를 클리어했을 때: 최고 클리어 기록을 올리고(줄어들지 않음),
+        /// 다음 스테이지가 있으면 그 번호를, 마지막 스테이지(엔딩)면 0을 마지막 플레이 스테이지로 기록한다.
+        /// 다음 스테이지 씬에 들어가기 전에 게임을 꺼도 타이틀의 게임 시작이 다음 스테이지로 이어지게 하려고 여기서 미리 기록한다.
+        /// </summary>
+        public static void RecordStageCleared(int stageNumber, bool isLastStage)
+        {
+            if (stageNumber < 1)
+            {
+                return;
+            }
+
+            SaveData current = LoadRaw();
+            int highestCleared = Mathf.Max(current?.HighestClearedStage ?? 0, stageNumber);
+            int lastPlayed = isLastStage ? 0 : stageNumber + 1;
+            Write(new SaveData(lastPlayed, highestCleared));
+        }
+
+        /// <summary>
+        /// 새 게임: 플레이 기록과 클리어 기록을 모두 지운다 (세이브 파일 삭제 = "기록 없음").
+        /// 값을 0으로 쓰지 않고 파일을 지우는 이유는, Load가 이미 "파일 없음"을 기록 없음으로 다루기 때문이다.
+        /// </summary>
+        public static void DeleteAll()
+        {
+            string path = FilePath;
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                // 쓰다가 꺼져서 남은 임시 파일도 함께 지운다
+                string tempPath = path + ".tmp";
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+                Debug.Log($"[SaveDataStore] 세이브 삭제: {path}");
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                Debug.LogError($"[SaveDataStore] 세이브 파일을 지우지 못했습니다: {path}\n{e.Message}");
+            }
+        }
+
+        // 파일 내용을 그대로 읽는다. 둘 다 0인 경우도 돌려준다 (쓰기 전에 기존 값을 합치기 위해).
+        private static SaveData LoadRaw()
+        {
             string path = FilePath;
             if (!File.Exists(path))
             {
@@ -46,21 +124,42 @@ namespace CoffeeSpec.Core
                 // 값이 없거나 숫자가 아니면 0으로 본다
                 TryGetInt(values, KeyLastPlayedStage, out int lastPlayed);
                 TryGetInt(values, KeyHighestClearedStage, out int highestCleared);
-                lastPlayed = Mathf.Max(0, lastPlayed);
-                highestCleared = Mathf.Max(0, highestCleared);
-
-                if (lastPlayed == 0 && highestCleared == 0)
-                {
-                    Debug.LogWarning($"[SaveDataStore] 플레이 기록과 클리어 기록이 모두 없어 기록 없음으로 처리합니다: {path}");
-                    return null;
-                }
-
-                return new SaveData(lastPlayed, highestCleared);
+                return new SaveData(Mathf.Max(0, lastPlayed), Mathf.Max(0, highestCleared));
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
                 Debug.LogWarning($"[SaveDataStore] 세이브 파일을 읽지 못해 기록 없음으로 처리합니다: {path}\n{e.Message}");
                 return null;
+            }
+        }
+
+        private static void Write(SaveData save)
+        {
+            string path = FilePath;
+            string tempPath = path + ".tmp";
+            string text =
+                "Key,Value\n" +
+                $"{KeyLastPlayedStage},{save.LastPlayedStage.ToString(CultureInfo.InvariantCulture)}\n" +
+                $"{KeyHighestClearedStage},{save.HighestClearedStage.ToString(CultureInfo.InvariantCulture)}\n";
+
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                // 쓰다가 꺼져도 기존 세이브가 깨지지 않도록 임시 파일에 먼저 쓰고 바꿔 끼운다
+                File.WriteAllText(tempPath, text);
+                if (File.Exists(path))
+                {
+                    File.Replace(tempPath, path, null);
+                }
+                else
+                {
+                    File.Move(tempPath, path);
+                }
+                Debug.Log($"[SaveDataStore] 저장: LastPlayedStage={save.LastPlayedStage}, HighestClearedStage={save.HighestClearedStage} ({path})");
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                Debug.LogError($"[SaveDataStore] 세이브 파일을 쓰지 못했습니다: {path}\n{e.Message}");
             }
         }
 
@@ -70,7 +169,7 @@ namespace CoffeeSpec.Core
             foreach (string rawLine in lines)
             {
                 // 엑셀의 "CSV UTF-8" 저장은 파일 맨 앞에 BOM을 붙인다
-                string line = rawLine.Trim().TrimStart('﻿');
+                string line = rawLine.Trim().TrimStart('\uFEFF');
                 if (line.Length == 0)
                 {
                     continue;

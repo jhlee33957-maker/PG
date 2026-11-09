@@ -15,8 +15,6 @@ MonoBehaviour:
   _sentenceCsv: {fileID: 4900000, guid: f5abd9c34845cae44a9ef8a798e4c23d, type: 3}
   _templateIds:
   - 
-  - NounIsNoun, !Person !Control
-  - NounIsNoun, !Exit !Win
   - NounIsNoun, !Exit !Fly
   - 
   - NounIfNounIsNoun, !Pigeon !Tread Die
@@ -28,10 +26,6 @@ MonoBehaviour:
   - _value: Move
   - _value: Fly
   - _value: Exit
-  - _value: Exit
-  - _value: Person
-  - _value: Control
-  - _value: Win
   - _value: Fly
   - _value: Fly
   - _value: Die

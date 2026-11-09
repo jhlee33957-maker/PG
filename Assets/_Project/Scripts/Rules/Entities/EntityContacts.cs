@@ -39,8 +39,9 @@ namespace CoffeeSpec.Rules.Entities
         {
             get
             {
+                // 벽은 밟는 쪽으로 치지 않는다. 벽 위에 얹혀 있거나 벽이 붙어 있기만 해도 '밟히면' 조건이 켜지면 안 된다
                 foreach (var t in _treaders)
-                    if (t != null && !t.IsRemoved && t.isActiveAndEnabled) return true;
+                    if (t != null && !t.IsRemoved && t.isActiveAndEnabled && t.Id != TouchIgnoredId) return true;
                 return false;
             }
         }
@@ -50,8 +51,22 @@ namespace CoffeeSpec.Rules.Entities
             get
             {
                 PruneInvalidContacts();
-                return _touching.Count > 0;
+                return HasTouch();
             }
+        }
+
+        // 벽은 맵 어디에나 붙어 있어서 닿은 것으로 치면 걷기만 해도 Touch 조건이 켜진다. 벽만 닿아 있으면 안 닿은 것으로 본다.
+        // 변신으로 Id가 바뀔 수 있어서 캐시하지 않고 매번 확인한다
+        private static readonly WordId TouchIgnoredId = new("Wall");
+
+        private bool HasTouch()
+        {
+            foreach (var c in _touching)
+            {
+                if (_owners.TryGetValue(c, out var e) && e != null && e.Id == TouchIgnoredId) continue;
+                return true;
+            }
+            return false;
         }
 
         private RuleEntity ResolveCollider(Collider2D collider)
@@ -97,7 +112,7 @@ namespace CoffeeSpec.Rules.Entities
 
         private void NotifyTouchSetChanged()
         {
-            bool touched = _touching.Count > 0;
+            bool touched = HasTouch();
             bool changed = _hadTouch != touched;
             _hadTouch = touched;
             _owner.Manager?.NotifyTouchChanged(_owner, changed);

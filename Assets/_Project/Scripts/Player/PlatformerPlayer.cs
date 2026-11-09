@@ -105,6 +105,8 @@ namespace CoffeeSpec.Player
             if (kb.aKey.isPressed || kb.leftArrowKey.isPressed) x -= 1f;
             _inputX = x;
             if (x != 0f && !IsDashing) SetFacing((int)x);
+            // 조종받지 않는 동안 Move가 그림을 뒤집었을 수 있다. 보이는 쪽과 대쉬·공격 방향이 어긋나지 않게 그림 방향을 따른다
+            else if (x == 0f && !IsDashing && _renderer != null) _facing = _renderer.flipX ? -1 : 1;
 
             if (kb.zKey.wasPressedThisFrame) _jumpBufferTimer = _jumpBufferTime;
             if (kb.zKey.wasReleasedThisFrame) _jumpCutRequested = true;
