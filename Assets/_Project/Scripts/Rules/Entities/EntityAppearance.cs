@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 using CoffeeSpec.Rules;
 
 namespace CoffeeSpec.Rules.Entities
@@ -86,7 +87,48 @@ namespace CoffeeSpec.Rules.Entities
                 if (rise > headroom) diff -= rise - headroom;
                 _rigidbody.position += new Vector2(0f, diff);
                 _owner.transform.position += new Vector3(0f, diff, 0f);
+                Physics2D.SyncTransforms();
+                LiftRiders(oldTop);
             }
+        }
+
+        // 위에 올라탄 것으로 치는 높이 오차. 밟는 순간 살짝 떠 있거나 박혀 있어도 올라탄 것으로 본다
+        private const float RiderTolerance = 0.1f;
+
+        /// <summary>
+        /// 변신 전에 내 윗면(oldTop) 높이에 발이 있던 대상 중, 바뀐 콜라이더 폭 안에 있는 것을 새 윗면 위에 세운다.
+        /// 예전 모습보다 넓어지면 가장자리에 있던 대상도 떨어지지 않고, 높아지면 발이 새 모습에 박혀 옆이나 아래로 밀려나지 않는다.
+        /// 어떤 대상이 무엇으로 변신하든 같은 규칙이 적용되도록 콜라이더 크기만 본다
+        /// </summary>
+        private void LiftRiders(float oldTop)
+        {
+            if (_collider == null || _collider.isTrigger || !_collider.enabled) return;
+            Bounds b = _collider.bounds;
+            float newTop = b.max.y;
+            // 낮아졌으면 위에 있던 대상은 중력으로 새 윗면에 내려앉으므로 따로 할 일이 없다
+            if (newTop <= oldTop - RiderTolerance) return;
+
+            float low = oldTop - RiderTolerance, high = newTop + RiderTolerance;
+            var area = new Vector2(b.size.x, high - low);
+            var center = new Vector2(b.center.x, (low + high) * 0.5f);
+            var lifted = new HashSet<Rigidbody2D>();
+            foreach (var hit in Physics2D.OverlapBoxAll(center, area, 0f))
+            {
+                if (hit == null || hit.isTrigger || hit == _collider) continue;
+                var body = hit.attachedRigidbody;
+                if (body == null || body == _rigidbody || body.bodyType == RigidbodyType2D.Static || !lifted.Add(body)) continue;
+                Bounds o = hit.bounds;
+                // 발이 예전 윗면 근처에 있던 대상만 올린다. 옆에 붙어 있던 대상(발이 더 아래)은 그대로 둔다
+                if (o.min.y < low || o.min.y >= high) continue;
+                // 바뀐 폭 바깥이면 원래대로 떨어진다
+                if (o.max.x <= b.min.x || o.min.x >= b.max.x) continue;
+                float lift = newTop - o.min.y;
+                if (lift <= 0f) continue;
+                body.position += new Vector2(0f, lift);
+                body.transform.position += new Vector3(0f, lift, 0f);
+                if (body.linearVelocity.y < 0f) body.linearVelocity = new Vector2(body.linearVelocity.x, 0f);
+            }
+            if (lifted.Count > 0) Physics2D.SyncTransforms();
         }
 
         private void CopyPhysicsFrom(RuleEntity source)
