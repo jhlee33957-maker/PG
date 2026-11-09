@@ -59,6 +59,17 @@ namespace CoffeeSpec.UI
         [Tooltip("클리어 팝업에서 '예'를 눌렀을 때 이동할 씬")]
         [SerializeField] private string _introSceneName = "Intro";
 
+        [Tooltip("켜면 세이브가 없을 때 '게임 시작'을 누르면 Intro 씬을 먼저 보여 준다. 끄면 바로 스테이지 1")]
+        [SerializeField] private bool _playIntroOnNewGame = true;
+
+        [Header("테스트용 가짜 세이브 (에디터에서만 동작)")]
+        [Tooltip("켜면 SaveData.csv 대신 아래 값을 사용한다")]
+        [SerializeField] private bool _useDebugSave;
+        [Tooltip("끄면 '기록 없음' 상태")]
+        [SerializeField] private bool _debugHasRecord = true;
+        [Tooltip("0 = 진행 중인 판 없음 (엔딩 직후)")]
+        [SerializeField, Min(0)] private int _debugLastPlayedStage = 1;
+        [SerializeField, Min(0)] private int _debugHighestClearedStage;
 
         private static readonly Color LockedImageColor = Color.black;
 
@@ -155,7 +166,14 @@ namespace CoffeeSpec.UI
             // 세이브가 없으면 인트로 대신 스테이지 1로 바로 시작한다
             if (save == null)
             {
-                StartStage(1);
+                if (_playIntroOnNewGame)
+                {
+                    SceneFader.LoadScene(_introSceneName);
+                }
+                else
+                {
+                    StartStage(1);
+                }
                 return;
             }
 
