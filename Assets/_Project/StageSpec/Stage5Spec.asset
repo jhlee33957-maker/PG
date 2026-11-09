@@ -17,11 +17,11 @@ MonoBehaviour:
   - NounIsNoun, !Pigeon !Move
   - NounIsNoun, !Pigeon !Fly
   - 
-  - NounIfNounNounIsNoun, !Button !Touch _ !Pigeon
-  - NounIfNounIsNoun, Person Tread Exit
-  - 
   - NounTouchNoun, !Spike !Die
   - NounTouchNoun, !Monster !Die
+  - 
+  - NounIfNounIsNoun, !Person !Tread !Exit
+  - NounIfNounNounIsNoun, !Button !Touch _ !Pigeon
   - 
   - NounIsNoun
   _wordPool:

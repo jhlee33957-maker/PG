@@ -130,6 +130,8 @@ namespace CoffeeSpec.UI
         [SerializeField] private Color _nounOutlineColor = Hex("#4F8BD6");
         [SerializeField] private Color _conjunctionOutlineColor = Hex("#3FB950");
         [SerializeField] private Color _otherOutlineColor = Hex("#8A9099");
+        [Tooltip("빈칸 상자 테두리: Noun과 Verb가 둘 다 들어갈 수 있는 칸. Verb만이면 Verb 색, Noun만이면 Noun 색을 쓴다")]
+        [SerializeField] private Color _nounOrVerbOutlineColor = Hex("#A371F7");
         [Tooltip("빌드 버튼: 가능할 때 배경 / 글자")]
         [SerializeField] private Color _buildEnabledColor = Hex("#2EA043");
         [SerializeField] private Color _buildEnabledTextColor = Color.white;
@@ -1262,11 +1264,13 @@ namespace CoffeeSpec.UI
                     int blankIndex = _blankOffsets[sentenceIndex] + slot;
                     hasHover |= blankIndex == _hoverBlank;
 
-                    AppendColored("[", _bracketColor, false);
+                    // 괄호도 칸 테두리와 같은 품사 색으로 칠해 어떤 품사 칸인지 글자만 봐도 알 수 있게 한다
+                    Color bracketColor = SlotOutlineColor(blankIndex, _bracketColor);
+                    AppendColored("[", bracketColor, false);
                     _textBuilder.Append(' ');
                     AppendBlank(blankIndex, invalid);
                     _textBuilder.Append(' ');
-                    AppendColored("]", _bracketColor, false);
+                    AppendColored("]", bracketColor, false);
                 }
                 else
                 {
@@ -1444,12 +1448,13 @@ namespace CoffeeSpec.UI
             else if (filled)
             {
                 fill = _blankFilledBoxColor;
-                outline = _blankFilledOutlineColor;
+                outline = SlotOutlineColor(blankIndex, _blankFilledOutlineColor);
             }
             else
             {
+                // 빈칸만 보고도 어떤 품사를 넣을 수 있는지 알 수 있게 빈 칸에도 품사 색 테두리를 그린다
                 fill = _blankEmptyBoxColor;
-                outline = Color.clear;
+                outline = SlotOutlineColor(blankIndex, Color.clear);
             }
 
             box.Fill.color = fill;
@@ -1481,6 +1486,26 @@ namespace CoffeeSpec.UI
                 _boxes.Add(new BlankBox { Rect = rect, Fill = fill, Outline = outline });
             }
             return _boxes[index];
+        }
+
+        // 칸이 받는 품사로 테두리 색을 정한다. Verb만 빨강, Noun만 파랑, 둘 다면 보라. 그 밖의 칸은 원래 색(fallback)
+        private Color SlotOutlineColor(int blankIndex, Color fallback)
+        {
+            int sentence = SentenceOfBlank(blankIndex);
+            if (sentence < 0 || sentence >= _templates.Count || _templates[sentence] == null) return fallback;
+            var pattern = _templates[sentence].Pattern;
+            int slot = blankIndex - _blankOffsets[sentence];
+            if (slot < 0 || slot >= pattern.Count || pattern[slot] == null) return fallback;
+            bool noun = false, verb = false;
+            foreach (var type in pattern[slot])
+            {
+                if (type == WordType.Noun) noun = true;
+                else if (type == WordType.Verb) verb = true;
+            }
+            if (noun && verb) return _nounOrVerbOutlineColor;
+            if (verb) return _verbOutlineColor;
+            if (noun) return _nounOutlineColor;
+            return fallback;
         }
 
         private int SentenceOfBlank(int blankIndex)
