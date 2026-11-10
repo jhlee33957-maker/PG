@@ -42,6 +42,10 @@ namespace CoffeeSpec.Core
         private Sprite _doorOriginal;
         private Rigidbody2D _body;
         private bool _bodyWasSimulated;
+        // 클리어 순간 문을 그 자리에 고정한다. 움직이던 문이면 캣도어 연출이 빈자리에 나오기 때문이다
+        private Rigidbody2D _doorBody;
+        private RigidbodyType2D _doorBodyType;
+        private bool _doorFrozen;
         private SpriteRenderer _view;
 
         /// <summary>연출을 시작한다. 재생하지 못하면 false. duration은 플랩이 닫힐 때까지 걸리는 시간(초).</summary>
@@ -114,6 +118,7 @@ namespace CoffeeSpec.Core
             _playerRenderer = playerRenderer;
             _doorRenderer = doorRenderer;
             _doorOriginal = doorRenderer.sprite;
+            FreezeDoor(doorRenderer);
 
             Bounds door = doorRenderer.bounds;
             Vector3 start = playerRenderer.bounds.center;
@@ -178,8 +183,22 @@ namespace CoffeeSpec.Core
             }
         }
 
+        // 문 리지드바디를 Static으로 바꿔 멈춘다. 리트로 되돌릴 때 원래 타입으로 돌린다
+        private void FreezeDoor(SpriteRenderer doorRenderer)
+        {
+            _doorBody = doorRenderer.GetComponentInParent<Rigidbody2D>();
+            if (_doorBody == null || _doorBody.bodyType == RigidbodyType2D.Static) return;
+            _doorBodyType = _doorBody.bodyType;
+            _doorBody.linearVelocity = Vector2.zero;
+            _doorBody.angularVelocity = 0f;
+            _doorBody.bodyType = RigidbodyType2D.Static;
+            _doorFrozen = true;
+        }
+
         private void Restore()
         {
+            if (_doorFrozen && _doorBody != null && _doorBody.bodyType == RigidbodyType2D.Static) _doorBody.bodyType = _doorBodyType;
+            _doorFrozen = false;
             if (_playerRenderer != null) _playerRenderer.enabled = true;
             if (_body != null) _body.simulated = _bodyWasSimulated;
             if (_doorRenderer != null && _doorOriginal != null) _doorRenderer.sprite = _doorOriginal;

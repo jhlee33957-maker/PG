@@ -142,7 +142,6 @@ MonoBehaviour:
   _colliderCornerRadius: 0.02
   _groundSnapDistance: 0.1
   _sinkTolerance: 0.03
-  _removedByAttack: 0
   _transformInvincibleTime: 0.2
   _transformLockTime: 0.1
   _faceMoveDirection: 1
@@ -187,17 +186,17 @@ BoxCollider2D:
   m_UsedByEffector: 0
   m_CompositeOperation: 0
   m_CompositeOrder: 0
-  m_Offset: {x: 0, y: 0}
+  m_Offset: {x: 0, y: -0.11}
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 0.75, y: 0.625}
+    oldSize: {x: 0.5, y: 0.625}
     newSize: {x: 0.5, y: 1}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
     adaptiveTiling: 0
   m_AutoTiling: 0
-  m_Size: {x: 0.5, y: 1}
+  m_Size: {x: 0.5, y: 0.45}
   m_EdgeRadius: 0
 --- !u!114 &1253876213190075060
 MonoBehaviour:
@@ -219,15 +218,3 @@ MonoBehaviour:
   _jumpBufferTime: 0.1
   _jumpCutMultiplier: 0.5
   _groundCheckDistance: 0.05
-  _dashSpeed: 16
-  _dashDuration: 0.12
-  _dashCooldown: 0.4
-  _sprintMultiplier: 1.4
-  _attackSize: {x: 1, y: 0.8}
-  _attackOffset: 0.8
-  _attackDuration: 0.1
-  _attackCooldown: 0.3
-  _showAttackHitbox: 1
-  _attackHitboxColor: {r: 1, g: 0, b: 0, a: 0.35}
-  _idleFrameTime: 0.4
-  _walkFrameTime: 0.1
