@@ -16,6 +16,8 @@ namespace CoffeeSpec.Core
         [SerializeField, Min(0f)] private float _nextStageDelay = 2f;
         [Tooltip("다음 스테이지 씬이 없을 때 돌아갈 씬 이름")]
         [SerializeField] private string _titleSceneName = "Title";
+        [Tooltip("고양이가 캣도어로 들어가는 연출이 끝난 뒤 다음 스테이지로 넘어가기까지 더 기다리는 시간(초)")]
+        [SerializeField, Min(0f)] private float _afterEnterDelay = 0.4f;
 
         private RuleManager _subscribedManager;
         private Coroutine _nextStageRoutine;
@@ -76,6 +78,7 @@ namespace CoffeeSpec.Core
             CancelNextStage();
             _cleared = false;
             _gameOver = false;
+            ExitEnterAnimation.Cancel();
             ClearScreen.Hide();
         }
 
@@ -95,7 +98,10 @@ namespace CoffeeSpec.Core
             RecordClear();
             ClearScreen.Show();
             CancelNextStage();
-            _nextStageRoutine = StartCoroutine(GoToNextStage());
+            // 고양이가 문으로 들어가는 연출이 있으면 플랩이 닫힐 때까지는 다음 스테이지로 넘어가지 않는다
+            float delay = _nextStageDelay;
+            if (ExitEnterAnimation.TryPlay(out float enterTime)) delay = Mathf.Max(delay, enterTime + _afterEnterDelay);
+            _nextStageRoutine = StartCoroutine(GoToNextStage(delay));
         }
 
         private void OnControlledDeathChanged(bool allDead)
@@ -109,6 +115,7 @@ namespace CoffeeSpec.Core
             _cleared = false;
             _gameOver = false;
             CancelNextStage();
+            ExitEnterAnimation.Cancel();
             ClearScreen.Hide();
         }
 
@@ -119,9 +126,9 @@ namespace CoffeeSpec.Core
             _nextStageRoutine = null;
         }
 
-        private IEnumerator GoToNextStage()
+        private IEnumerator GoToNextStage(float delay)
         {
-            yield return new WaitForSecondsRealtime(_nextStageDelay);
+            yield return new WaitForSecondsRealtime(delay);
             _nextStageRoutine = null;
             SceneFader.LoadScene(NextSceneName());
         }
