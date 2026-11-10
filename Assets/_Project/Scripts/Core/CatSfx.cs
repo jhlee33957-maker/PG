@@ -12,6 +12,8 @@ namespace CoffeeSpec.Core
     public static class CatSfx
     {
         private const string ClipPath = "Sfx/meow";
+        /// <summary>고양이 밑에 다는 소리 전용 자식 이름. 설정의 효과음 배율을 두 번 곱하지 않게 GameSettings가 이 이름으로 건너뛴다.</summary>
+        public const string SourceName = "CatSfx";
         private const string CatTexture = "PlayerCat";
         private const float JumpVolume = 0.6f;
         private const float ClearVolume = 0.9f;
@@ -52,17 +54,16 @@ namespace CoffeeSpec.Core
             source.Stop();
             source.clip = _clip;
             source.pitch = Random.Range(PitchMin, PitchMax);
-            source.volume = volume;
+            source.volume = volume * GameSettings.SfxVolume;
             source.Play();
         }
 
         // 고양이 밑에 소리 전용 자식을 하나 둔다. 엔티티 본체의 다른 AudioSource와 섞이지 않게
         private static AudioSource SourceOf(GameObject cat)
         {
-            const string Name = "CatSfx";
-            var child = cat.transform.Find(Name);
+            var child = cat.transform.Find(SourceName);
             if (child != null && child.TryGetComponent(out AudioSource existing)) return existing;
-            var go = new GameObject(Name);
+            var go = new GameObject(SourceName);
             go.transform.SetParent(cat.transform, false);
             var source = go.AddComponent<AudioSource>();
             source.playOnAwake = false;
