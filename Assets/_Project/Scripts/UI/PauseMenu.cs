@@ -45,6 +45,8 @@ namespace CoffeeSpec.UI
 
         private Page _page = Page.Closed;
         private float _timeScaleBeforeOpen = 1f;
+        // 타이틀의 Settings 줄에서 열었으면 true. 설정 창만 보여 주고, 뒤로(ESC)를 누르면 1단 메뉴 대신 바로 닫는다
+        private bool _settingsOnly;
 
         private GameObject _root;
         private GameObject _mainPanel;
@@ -112,8 +114,37 @@ namespace CoffeeSpec.UI
         private void OnSceneChanged(Scene from, Scene to)
         {
             if (_page == Page.Closed) return;
+            _settingsOnly = false;
             SetPage(Page.Closed);
             Time.timeScale = 1f;
+        }
+
+        /// <summary>
+        /// 타이틀 화면의 Settings 줄에서 부른다. 1단 메뉴(설정/메인화면/게임종료) 없이 설정 창만 연다.
+        /// 타이틀에는 멈출 게임이 없으므로 시간은 건드리지 않는다.
+        /// </summary>
+        public static void OpenSettings()
+        {
+            if (_instance == null) Create();
+            _instance.OpenSettingsOnly();
+        }
+
+        private void OpenSettingsOnly()
+        {
+            if (_page != Page.Closed) return;
+            EnsureBuilt();
+            EnsureEventSystem();
+            _settingsOnly = true;
+            // Close가 이 값으로 되돌리므로, 지금 시간을 그대로 넣어 두면 닫아도 시간은 바뀌지 않는다
+            _timeScaleBeforeOpen = Time.timeScale;
+            SetPage(Page.Settings);
+        }
+
+        // 설정 창의 뒤로(ESC, 'ESC 뒤로' 클릭). 타이틀에서 연 설정 창이면 닫고, 아니면 1단 메뉴로 돌아간다
+        private void BackFromSettings()
+        {
+            if (_settingsOnly) Close();
+            else SetPage(Page.Main);
         }
 
         // ---------------- 입력 ----------------
@@ -162,8 +193,8 @@ namespace CoffeeSpec.UI
                     Close();
                     break;
                 case Page.Settings:
-                    // 적용 안 한 화면 설정은 버리고 1단으로 돌아간다 (볼륨은 움직이는 즉시 저장됨)
-                    SetPage(Page.Main);
+                    // 적용 안 한 화면 설정은 버리고 1단으로 돌아간다 (볼륨은 움직이는 즉시 저장됨). 타이틀에서 열었으면 닫는다
+                    BackFromSettings();
                     break;
             }
         }
@@ -181,6 +212,7 @@ namespace CoffeeSpec.UI
 
         private void Close()
         {
+            _settingsOnly = false;
             SetPage(Page.Closed);
             Time.timeScale = _timeScaleBeforeOpen;
         }
@@ -301,6 +333,13 @@ namespace CoffeeSpec.UI
             GameSettings.ApplyDisplay(size.x, size.y, _pendingFullscreen);
         }
 
+        // 적용 버튼: 화면 설정을 바꾸고 창을 닫는다 (화면모드·해상도 줄의 Enter로는 적용하지 않는다)
+        private void ApplyAndClose()
+        {
+            ApplyDisplay();
+            Close();
+        }
+
         private void RefreshSettingVisuals()
         {
             if (_settingsPanel == null) return;
@@ -395,7 +434,6 @@ namespace CoffeeSpec.UI
             _fullButton = new ModeButton(this, _settingRows[2].Rect, "전체화면", new Vector2(400f, 0f), () => SetPendingFullscreen(true));
             _windowButton = new ModeButton(this, _settingRows[2].Rect, "창모드", new Vector2(640f, 0f), () => SetPendingFullscreen(false));
             _settingRows[2].Adjust = d => SetPendingFullscreen(d < 0);
-            _settingRows[2].Submit = ApplyDisplay;
 
             // 해상도: < 값 > 화살표. 좌우 키로 고르고 적용을 눌러야 바뀐다
             var resRow = _settingRows[3].Rect;
@@ -409,7 +447,6 @@ namespace CoffeeSpec.UI
             Place(rightArrow.rectTransform, new Vector2(760f, 0f), new Vector2(60f, 70f));
             AddClick(rightArrow.gameObject, () => { Select(3); ChangeResolution(1); });
             _settingRows[3].Adjust = ChangeResolution;
-            _settingRows[3].Submit = ApplyDisplay;
 
             // 아래쪽: 왼쪽 'ESC 뒤로'(클릭해도 뒤로), 오른쪽 '적용' 버튼(키보드로는 마지막 줄)
             var panelRect = (RectTransform)_settingsPanel.transform;
@@ -418,7 +455,7 @@ namespace CoffeeSpec.UI
             back.rectTransform.pivot = new Vector2(0f, 0f);
             back.rectTransform.anchoredPosition = new Vector2(48f, 36f);
             back.rectTransform.sizeDelta = new Vector2(200f, 60f);
-            AddClick(back.gameObject, () => SetPage(Page.Main));
+            AddClick(back.gameObject, BackFromSettings);
 
             _applyButton = NewImage("Apply", panelRect, _roundFill, AccentColor);
             _applyButton.type = Image.Type.Sliced;
@@ -431,9 +468,9 @@ namespace CoffeeSpec.UI
             var applyText = NewText("Text", applyRect, "적용", 36f, PanelColor, TextAlignmentOptions.Center);
             Stretch(applyText.rectTransform);
             applyText.raycastTarget = false;
-            var applyRow = new Row { Rect = applyRect, Submit = ApplyDisplay };
+            var applyRow = new Row { Rect = applyRect, Submit = ApplyAndClose };
             _settingRows.Add(applyRow);
-            AddHover(_applyButton.gameObject, () => Select(_settingRows.IndexOf(applyRow)), ApplyDisplay);
+            AddHover(_applyButton.gameObject, () => Select(_settingRows.IndexOf(applyRow)), ApplyAndClose);
         }
 
         private GameObject BuildPanel(Transform parent, string name, Vector2 size, string title)
@@ -534,7 +571,8 @@ namespace CoffeeSpec.UI
                 drag.OnValue = screen =>
                 {
                     RectTransformUtility.ScreenPointToLocalPointInRectangle(track.rectTransform, screen, null, out var local);
-                    onDrag(Mathf.Clamp01((local.x + Width * 0.5f) / Width));
+                    // 막대는 Place로 왼쪽 끝이 기준점(pivot x=0)이라 local.x가 곧 왼쪽 끝에서 떨어진 거리다. 반 폭을 더하면 누른 곳보다 반 칸 오른쪽 값이 된다
+                    onDrag(Mathf.Clamp01(local.x / Width));
                 };
             }
 
@@ -658,7 +696,7 @@ namespace CoffeeSpec.UI
         // 자동 분할된 PlayerCat 시트의 0, 1번(가만히 있기) 칸을 커서로 쓴다
         private static Sprite[] LoadCatFrames()
         {
-            var all = Resources.LoadAll<Sprite>(CatSheet);
+            var all = SpriteSheetLibrary.GetFrames(CatSheet) ?? Array.Empty<Sprite>();
             var frames = new List<Sprite>();
             foreach (string n in new[] { $"{CatSheet}_0", $"{CatSheet}_1" })
             {

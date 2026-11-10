@@ -4,13 +4,13 @@ using UnityEngine;
 namespace CoffeeSpec.EditorTools
 {
     /// <summary>
-    /// Sprite/CatOiia.png(오이아이오 식빵 고양이 회전 8컷)를 32 PPU, 점 필터, 16x13 컷으로 자른다.
+    /// Sprite/Object/CatOiia.png(오이아이오 식빵 고양이 회전 8컷)를 32 PPU, 점 필터, 16x13 컷으로 자른다.
     /// CatOiiaDance가 형광색 마스크를 만들 수 있게 읽기 가능으로 둔다.
     /// </summary>
     [InitializeOnLoad]
     internal sealed class CatOiiaImportSettings : AssetPostprocessor
     {
-        private const string TexturePath = "Assets/_Project/Sprite/CatOiia.png";
+        private const string TexturePath = "Assets/_Project/Sprite/Object/CatOiia.png";
         private const string SpriteName = "CatOiia";
         private const int CellWidth = 16, CellHeight = 13, FrameCount = 8, PixelsPerUnit = 32;
 

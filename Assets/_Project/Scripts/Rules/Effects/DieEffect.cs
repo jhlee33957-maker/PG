@@ -14,7 +14,6 @@ namespace CoffeeSpec.Rules.Effects
         public override bool IsActive(RuleEntity entity, bool assigned) => entity.IsRemoved || (assigned && CanDie(entity) && !entity.IsInvincible);
         public override void Apply(RuleEntity entity, bool assigned, VerbEffectCollection effects)
         {
-            if (assigned) RuleManager.Trace($"Die {entity.name} id={entity.Id} invincible={entity.IsInvincible}"); // TEMP TRACE
             if (!assigned || !CanDie(entity) || entity.IsInvincible) return; // 변신 직후 무적이면 죽지 않는다
             // 조종 해제 전에 죽었음을 알려 기존 사망 판정을 유지한다.
             effects.BeforeDeath(entity);

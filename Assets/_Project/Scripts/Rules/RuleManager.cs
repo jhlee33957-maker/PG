@@ -195,16 +195,8 @@ namespace CoffeeSpec.Rules
             }
         }
 
-        // TEMP TRACE: 가시 위 부활 반복 원인 확인용 임시 기록. 원인을 찾으면 지운다
-        private static readonly string TracePath = System.IO.Path.Combine(Application.dataPath, "../Logs/pg_trace.txt");
-        internal static void Trace(string msg)
-        {
-            try { System.IO.File.AppendAllText(TracePath, $"[{Time.frameCount} {Time.time:F3}] {msg}\n"); } catch { }
-        }
-
         private void Awake()
         {
-            try { System.IO.File.WriteAllText(TracePath, ""); } catch { } // TEMP TRACE
             _effects = new VerbEffectCollection(OnEffectDeath);
             Instance = this;
             Available?.Invoke(this);

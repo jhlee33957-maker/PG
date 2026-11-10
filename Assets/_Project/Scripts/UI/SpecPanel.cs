@@ -36,6 +36,7 @@ namespace CoffeeSpec.UI
     public class SpecPanel : MonoBehaviour
     {
         private const string BlankLinkPrefix = "blank_";
+        private const string ReturnLabel = "Return (R)";
 
         // 문장 틀의 빈칸 표기: {0}, {1} ...
 
@@ -185,6 +186,8 @@ namespace CoffeeSpec.UI
 
         // 빈칸 상자 (텍스트 뒤에 깔림)
         private RectTransform _boxLayer;
+        // 테두리만 모아 그리는 층. 상자(바탕) 층보다 뒤에 그려져서, 위아래 줄 상자가 겹쳐도 다른 상자의 바탕이 테두리를 덮지 않는다
+        private RectTransform _borderLayer;
         private readonly List<BlankBox> _boxes = new List<BlankBox>();
 
         // 끌기 상태
@@ -193,9 +196,18 @@ namespace CoffeeSpec.UI
         private int _hoverBlank = -1;      // 끌고 있는 단어 아래의 빈칸
         private RectTransform _dragGhost;  // 마우스를 따라다니는 단어 칩
         private TextMeshProUGUI _dragGhostText;
-        private Image _dragGhostOutline;
+        private Graphic _dragGhostOutline;
 
         private bool _initialized;
+
+        // 미리보기 버튼의 원래 자리. 접은 동안에는 리트 버튼 자리(오른쪽 위)로 옮겼다가 펼치면 되돌린다
+        private TMP_Text _previewLabel;
+        private string _previewText;
+        private Vector2 _previewAnchorMin;
+        private Vector2 _previewAnchorMax;
+        private Vector2 _previewPivot;
+        private Vector2 _previewPosition;
+        private Vector2 _previewSize;
 
         private bool IsDragging => _dragOption >= 0;
 
@@ -203,7 +215,7 @@ namespace CoffeeSpec.UI
         {
             public RectTransform Rect;
             public Image Fill;
-            public Image Outline;
+            public Graphic Outline; // 테두리 층에 따로 있다. 없으면 null
         }
 
         // ---------------- 생명주기 ----------------
@@ -234,6 +246,12 @@ namespace CoffeeSpec.UI
             if (!IsOpen && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             {
                 RequestRetry();
+            }
+            // 미리보기(접힌 상태)에서는 R키가 오른쪽 위 Return 버튼과 같이 기획서를 다시 펼친다.
+            // 이때는 IsOpen이 true라 위의 리트는 불리지 않는다. ESC 메뉴가 떠 있으면 메뉴가 닫힐 때 되돌릴 시간 값이 꼬이므로 받지 않는다
+            else if (IsViewingStage && !PauseMenu.IsOpen && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+            {
+                SetStageView(false);
             }
         }
 
@@ -441,6 +459,8 @@ namespace CoffeeSpec.UI
                 _btnReset.onClick.AddListener(ResetWords);
             }
 
+            SavePreviewLayout();
+
             return true;
         }
 
@@ -586,15 +606,25 @@ namespace CoffeeSpec.UI
         private void CreateBoxLayer()
         {
             var textRect = _documentText.rectTransform;
-            var layerObject = new GameObject("BlankBoxes", typeof(RectTransform));
-            _boxLayer = (RectTransform)layerObject.transform;
-            _boxLayer.SetParent(textRect.parent, false);
-            _boxLayer.SetSiblingIndex(textRect.GetSiblingIndex()); // 텍스트보다 먼저 그려져 뒤에 깔림
-            _boxLayer.anchorMin = textRect.anchorMin;
-            _boxLayer.anchorMax = textRect.anchorMax;
-            _boxLayer.pivot = textRect.pivot;
-            _boxLayer.offsetMin = textRect.offsetMin;
-            _boxLayer.offsetMax = textRect.offsetMax;
+            // 그리는 순서: 상자 바탕 전부 → 테두리 전부 → 텍스트.
+            // 상자는 줄 높이보다 위아래로 조금 커서 이웃 줄 상자와 겹치는데, 상자마다 바탕+테두리를 같이 그리면 아래 줄 바탕이 윗줄 테두리를 지운다
+            _boxLayer = CreateTextOverlayLayer("BlankBoxes", textRect);
+            _borderLayer = CreateTextOverlayLayer("BlankBorders", textRect);
+        }
+
+        // 텍스트와 같은 위치·크기의 층을 텍스트 바로 앞(= 텍스트보다 먼저 그려져 뒤에 깔림)에 만든다
+        private static RectTransform CreateTextOverlayLayer(string name, RectTransform textRect)
+        {
+            var layerObject = new GameObject(name, typeof(RectTransform));
+            var layer = (RectTransform)layerObject.transform;
+            layer.SetParent(textRect.parent, false);
+            layer.SetSiblingIndex(textRect.GetSiblingIndex());
+            layer.anchorMin = textRect.anchorMin;
+            layer.anchorMax = textRect.anchorMax;
+            layer.pivot = textRect.pivot;
+            layer.offsetMin = textRect.offsetMin;
+            layer.offsetMax = textRect.offsetMax;
+            return layer;
         }
 
         /// <summary>
@@ -624,6 +654,7 @@ namespace CoffeeSpec.UI
             _optionBar.SetActive(true);
             _wordLayer.gameObject.SetActive(true);
             SetRetryButtonVisible(false);
+            PlacePreviewButton(false);
             SetPreviewButtonVisible(true);
             SetResetButtonVisible(true);
 
@@ -644,6 +675,7 @@ namespace CoffeeSpec.UI
             _wordLayer.gameObject.SetActive(false);
             _documentRoot.SetActive(false);
             SetRetryButtonVisible(true);
+            PlacePreviewButton(false);
             SetPreviewButtonVisible(false);
             SetResetButtonVisible(false);
         }
@@ -669,6 +701,8 @@ namespace CoffeeSpec.UI
             _wordLayer.gameObject.SetActive(!viewing);
             // 접힌 동안에는 뺄 단어가 안 보이므로 리셋 버튼도 숨긴다
             SetResetButtonVisible(!viewing);
+            // 원래 자리의 미리보기 버튼은 다른 UI처럼 사라지고, 같은 버튼이 리트 버튼 자리(오른쪽 위)에 나타나 다시 펼치는 데 쓰인다
+            PlacePreviewButton(viewing);
 
             if (viewing)
             {
@@ -689,6 +723,54 @@ namespace CoffeeSpec.UI
             if (_btnPreview != null)
             {
                 _btnPreview.gameObject.SetActive(visible);
+            }
+        }
+
+        private void SavePreviewLayout()
+        {
+            if (_btnPreview == null)
+            {
+                return;
+            }
+            var rect = (RectTransform)_btnPreview.transform;
+            _previewAnchorMin = rect.anchorMin;
+            _previewAnchorMax = rect.anchorMax;
+            _previewPivot = rect.pivot;
+            _previewPosition = rect.anchoredPosition;
+            _previewSize = rect.sizeDelta;
+            _previewLabel = _btnPreview.GetComponentInChildren<TMP_Text>(true);
+            _previewText = _previewLabel != null ? _previewLabel.text : null;
+        }
+
+        // topRight면 리트 버튼과 같은 자리·크기로, 아니면 프리팹에 놓인 원래 자리로. 리트 버튼은 기획서가 열린 동안 숨겨져 있어 겹치지 않는다
+        // 오른쪽 위에서는 '기획서로 돌아가기' 버튼이므로 글자를 Return으로 바꾸고, 제자리로 오면 프리팹 글자(PreView)로 되돌린다
+        private void PlacePreviewButton(bool topRight)
+        {
+            if (_btnPreview == null)
+            {
+                return;
+            }
+            var rect = (RectTransform)_btnPreview.transform;
+            if (topRight && _btnRetry != null)
+            {
+                var retry = (RectTransform)_btnRetry.transform;
+                rect.anchorMin = retry.anchorMin;
+                rect.anchorMax = retry.anchorMax;
+                rect.pivot = retry.pivot;
+                rect.anchoredPosition = retry.anchoredPosition;
+                rect.sizeDelta = retry.sizeDelta;
+            }
+            else
+            {
+                rect.anchorMin = _previewAnchorMin;
+                rect.anchorMax = _previewAnchorMax;
+                rect.pivot = _previewPivot;
+                rect.anchoredPosition = _previewPosition;
+                rect.sizeDelta = _previewSize;
+            }
+            if (_previewLabel != null)
+            {
+                _previewLabel.text = topRight && _btnRetry != null ? ReturnLabel : _previewText;
             }
         }
 
@@ -899,7 +981,8 @@ namespace CoffeeSpec.UI
 
             if (_boxOutlineSprite != null)
             {
-                _dragGhostOutline = CreateChildImage(_dragGhost, "Outline", _boxOutlineSprite);
+                // 1px 링 스프라이트는 작은 화면에서 끊기므로 화면 픽셀 두께가 보장되는 선으로 그린다
+                _dragGhostOutline = CreateChildBorder(_dragGhost, "Outline");
             }
 
             var textObject = new GameObject("Text", typeof(RectTransform));
@@ -1413,12 +1496,23 @@ namespace CoffeeSpec.UI
                 box.Rect.gameObject.SetActive(true);
                 box.Rect.anchoredPosition = min - _boxPadding;
                 box.Rect.sizeDelta = (max - min) + _boxPadding * 2f;
+                if (box.Outline != null)
+                {
+                    RectTransform outlineRect = box.Outline.rectTransform;
+                    outlineRect.gameObject.SetActive(true);
+                    outlineRect.anchoredPosition = box.Rect.anchoredPosition;
+                    outlineRect.sizeDelta = box.Rect.sizeDelta;
+                }
                 ApplyBoxColors(box, blankIndex);
             }
 
             for (int i = used; i < _boxes.Count; i++)
             {
                 _boxes[i].Rect.gameObject.SetActive(false);
+                if (_boxes[i].Outline != null)
+                {
+                    _boxes[i].Outline.gameObject.SetActive(false);
+                }
             }
         }
 
@@ -1499,7 +1593,20 @@ namespace CoffeeSpec.UI
                 ApplySprite(fill, _boxSprite);
                 fill.raycastTarget = false;
 
-                Image outline = _boxOutlineSprite != null ? CreateChildImage(rect, "Outline", _boxOutlineSprite) : null;
+                // 테두리는 상자의 자식이 아니라 테두리 층에 같은 자리·크기로 둔다 (LayoutBlankBoxes에서 상자와 같이 옮김)
+                // 1px 링 스프라이트 대신 화면이 작아져도 최소 1화면픽셀 두께가 유지되는 선으로 그린다 (작은 해상도에서 위·아래가 끊기던 문제)
+                Graphic outline = null;
+                if (_boxOutlineSprite != null)
+                {
+                    var outlineObject = new GameObject($"Outline_{_boxes.Count}", typeof(RectTransform));
+                    var outlineRect = (RectTransform)outlineObject.transform;
+                    outlineRect.SetParent(_borderLayer, false);
+                    outlineRect.anchorMin = _borderLayer.pivot;
+                    outlineRect.anchorMax = _borderLayer.pivot;
+                    outlineRect.pivot = Vector2.zero;
+                    outline = outlineObject.AddComponent<UILineBorder>();
+                    outline.raycastTarget = false;
+                }
 
                 _boxes.Add(new BlankBox { Rect = rect, Fill = fill, Outline = outline });
             }
@@ -1658,6 +1765,17 @@ namespace CoffeeSpec.UI
             ApplySprite(image, sprite);
             image.raycastTarget = false;
             return image;
+        }
+
+        private static Graphic CreateChildBorder(RectTransform parent, string name)
+        {
+            var child = new GameObject(name, typeof(RectTransform));
+            var rect = (RectTransform)child.transform;
+            rect.SetParent(parent, false);
+            StretchFull(rect);
+            var border = child.AddComponent<UILineBorder>();
+            border.raycastTarget = false;
+            return border;
         }
 
         private static void StretchFull(RectTransform rect)

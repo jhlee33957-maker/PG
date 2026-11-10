@@ -1,13 +1,10 @@
 fileFormatVersion: 2
-guid: a9647f90a168ac74b8d9088d466cba52
+guid: 59ec6d3c946f4054c8345802329998ba
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 5638806022225874874
-    second: Proto_Player_0
-  - first:
-      213: -7186245197937193533
-    second: Proto_Player_1
+      213: -2441200363399293737
+    second: Thumb_Stage2_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -54,7 +51,7 @@ TextureImporter:
   spriteMeshType: 1
   alignment: 0
   spritePivot: {x: 0.5, y: 0.5}
-  spritePixelsToUnits: 32
+  spritePixelsToUnits: 100
   spriteBorder: {x: 0, y: 0, z: 0, w: 0}
   spriteGenerateFallbackPhysicsShape: 1
   alphaUsage: 1
@@ -101,30 +98,17 @@ TextureImporter:
     ignorePlatformSupport: 0
     androidETC2FallbackOverride: 0
     forceMaximumCompressionQuality_BC6H_BC7: 0
-  - serializedVersion: 4
-    buildTarget: WebGL
-    maxTextureSize: 2048
-    resizeAlgorithm: 0
-    textureFormat: -1
-    textureCompression: 1
-    compressionQuality: 50
-    crunchedCompression: 0
-    allowsAlphaSplitting: 0
-    overridden: 0
-    ignorePlatformSupport: 0
-    androidETC2FallbackOverride: 0
-    forceMaximumCompressionQuality_BC6H_BC7: 0
   spriteSheet:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: Proto_Player_0
+      name: Thumb_Stage2_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 16
-        height: 20
+        width: 671
+        height: 414
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -133,30 +117,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: abf4b189330114e40800000000000000
-      internalID: 5638806022225874874
-      vertices: []
-      indices: 
-      edges: []
-      weights: []
-    - serializedVersion: 2
-      name: Proto_Player_1
-      rect:
-        serializedVersion: 2
-        x: 1
-        y: 19
-        width: 14
-        height: 13
-      alignment: 0
-      pivot: {x: 0, y: 0}
-      border: {x: 0, y: 0, z: 0, w: 0}
-      customData: 
-      outline: []
-      physicsShape: []
-      tessellationDetail: -1
-      bones: []
-      spriteID: 3cdc81c1114554c90800000000000000
-      internalID: -7186245197937193533
+      spriteID: 7d4d70a143d1f1ed0800000000000000
+      internalID: -2441200363399293737
       vertices: []
       indices: 
       edges: []
@@ -175,8 +137,7 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      Proto_Player_0: 5638806022225874874
-      Proto_Player_1: -7186245197937193533
+      Thumb_Stage2_0: -2441200363399293737
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 

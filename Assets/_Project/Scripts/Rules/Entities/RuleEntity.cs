@@ -333,7 +333,6 @@ namespace CoffeeSpec.Rules.Entities
             }
             _rigidbody.linearVelocity = Vector2.zero;
             _rigidbody.simulated = false;
-            RuleManager.Trace($"Remove {name} id={Id} pos={transform.position}"); // TEMP TRACE
             _contacts.ClearTreaders(); // 사라지면 아무도 올라서 있을 수 없다
             _contacts.ClearTouching(); // 사라지면 아무것에도 닿아 있지 않다
             ContactsInvalidated?.Invoke(this);

@@ -1,10 +1,11 @@
 using System.Collections.Generic;
+using CoffeeSpec.Core;
 using UnityEngine;
 
 namespace CoffeeSpec.Rules.Entities
 {
     /// <summary>
-    /// 지금 그려지는 그림이 어떤 시트(Resources의 PlayerCat, Pigeon)에서 왔는지 보고
+    /// 지금 그려지는 그림이 어떤 시트(Sprite/Object의 PlayerCat, Pigeon)에서 왔는지 보고
     /// 땅에 서 있는지, 걷는지, 공중에 있는지에 맞춰 컷을 바꾼다.
     /// 변신하면 그림이 다른 시트로 바뀌므로 그 시트의 애니메이션을 따라가고, 시트가 없는 모습이면 손대지 않는다.
     /// 그림만 바꾸고 콜라이더 크기는 건드리지 않는다 (컷마다 크기가 같다).
@@ -136,7 +137,7 @@ namespace CoffeeSpec.Rules.Entities
             return false;
         }
 
-        // 시트마다 컷 순서. 그림 파일은 Assets/_Project/Resources 에 있고, 에디터에서 컷을 잘라 둔다
+        // 시트마다 컷 순서. 그림 파일은 Assets/_Project/Sprite/Object 에 있고, 에디터에서 컷을 잘라 SpriteSheetLibrary에 담아 둔다
         private static AnimSet Load(string key)
         {
             if (string.IsNullOrEmpty(key)) return null;
@@ -187,7 +188,7 @@ namespace CoffeeSpec.Rules.Entities
         // 잘라 둔 컷을 이름 순서로 읽는다. 아직 안 잘렸으면 텍스처를 같은 너비로 나눠 만든다
         private static Sprite[] LoadSprites(string key, int count)
         {
-            var sliced = Resources.LoadAll<Sprite>(key);
+            var sliced = SpriteSheetLibrary.GetFrames(key);
             if (sliced != null && sliced.Length >= count)
             {
                 System.Array.Sort(sliced, (a, b) => FrameIndex(a.name).CompareTo(FrameIndex(b.name)));
@@ -196,10 +197,10 @@ namespace CoffeeSpec.Rules.Entities
                 return result;
             }
 
-            var texture = Resources.Load<Texture2D>(key);
+            var texture = sliced != null && sliced.Length > 0 && sliced[0] != null ? sliced[0].texture : null;
             if (texture == null)
             {
-                Debug.LogWarning($"[EntitySpriteAnimator] Resources/{key} 시트를 찾지 못했다.");
+                Debug.LogWarning($"[EntitySpriteAnimator] SpriteSheetLibrary에서 {key} 시트를 찾지 못했다.");
                 return null;
             }
             texture.filterMode = FilterMode.Point;

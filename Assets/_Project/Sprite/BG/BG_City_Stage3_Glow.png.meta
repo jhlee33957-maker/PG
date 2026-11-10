@@ -134,7 +134,7 @@ TextureImporter:
   platformSettings:
   - serializedVersion: 4
     buildTarget: DefaultTexturePlatform
-    maxTextureSize: 2048
+    maxTextureSize: 4096
     resizeAlgorithm: 0
     textureFormat: -1
     textureCompression: 0
@@ -166,11 +166,11 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 419
-        width: 676
-        height: 179
+        y: 593
+        width: 810
+        height: 265
       alignment: 9
-      pivot: {x: 0.50443786, y: -0.575419}
+      pivot: {x: 0.47160494, y: -0.38867924}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -188,11 +188,11 @@ TextureImporter:
       rect:
         serializedVersion: 2
         x: 0
-        y: 253
-        width: 621
-        height: 164
+        y: 343
+        width: 795
+        height: 248
       alignment: 9
-      pivot: {x: 0.49114332, y: -0.75}
+      pivot: {x: 0.48553458, y: -0.4717742}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
@@ -211,10 +211,10 @@ TextureImporter:
         serializedVersion: 2
         x: 0
         y: 103
-        width: 671
-        height: 148
+        width: 857
+        height: 238
       alignment: 9
-      pivot: {x: 0.5022355, y: -0.8783784}
+      pivot: {x: 0.504084, y: -0.53781515}
       border: {x: 0, y: 0, z: 0, w: 0}
       customData: 
       outline: []
