@@ -85,7 +85,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 21300000, guid: a9647f90a168ac74b8d9088d466cba52, type: 3}
+  m_Sprite: {fileID: 5242497279597161775, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -143,6 +143,8 @@ MonoBehaviour:
   _groundSnapDistance: 0.1
   _sinkTolerance: 0.03
   _removedByAttack: 0
+  _transformInvincibleTime: 0.2
+  _transformLockTime: 0.1
   _faceMoveDirection: 1
   _controlGravity: 1.5
   _flyHeightRange: {x: 6, y: 8}
@@ -189,7 +191,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 0.5, y: 1}
+    oldSize: {x: 0.75, y: 0.625}
     newSize: {x: 0.5, y: 1}
     adaptiveTilingThreshold: 0.5
     drawMode: 0
@@ -227,3 +229,5 @@ MonoBehaviour:
   _attackCooldown: 0.3
   _showAttackHitbox: 1
   _attackHitboxColor: {r: 1, g: 0, b: 0, a: 0.35}
+  _idleFrameTime: 0.4
+  _walkFrameTime: 0.1
