@@ -185,6 +185,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 669742698}
+  - component: {fileID: 669742699}
   m_Layer: 0
   m_Name: Level
   m_TagString: Untagged
@@ -207,6 +208,22 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &669742699
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 669742697}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fbebb2a40a9363345a147f7f151bdd35, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Rules.LevelSettings
+  _flyHeights:
+  - word:
+      _value: Pigeon
+    height: 4
 --- !u!1 &1511495578
 GameObject:
   m_ObjectHideFlags: 0
