@@ -1,0 +1,50 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7999a9ebd35389947b5c386b838e6c4a, type: 3}
+  m_Name: SpriteSheetLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Core.SpriteSheetLibrary
+  _sheets:
+  - Name: PlayerCat
+    Frames:
+    - {fileID: 5242497279597161775, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: 7990275846611609453, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: 9105138240097626339, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: -3029174454128725076, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: 9097872120409369504, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: 2321074784090192266, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+    - {fileID: 4441149373976393075, guid: bc727373eb4e358468f1d0996bd2b7db, type: 3}
+  - Name: Pigeon
+    Frames:
+    - {fileID: 9046215376232531194, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: 6505781585981187687, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: 7945509868782824717, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: -4462544756989265850, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: -2161084039442597646, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: 368401206472315151, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+    - {fileID: -4940699140528546233, guid: 9b60bb05192c85647bf3a6711a9c165b, type: 3}
+  - Name: CatEnter
+    Frames:
+    - {fileID: 1020995497628443947, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: 45222089236409403, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: -2030639064004390165, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: -616951113877548372, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: -6479284326384864999, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: 3587195024019008680, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+    - {fileID: -1553617920182572274, guid: b9ee8954e75e16c44890fafc5b81f34d, type: 3}
+  - Name: DoorFlap
+    Frames:
+    - {fileID: -3821807124459763332, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}
+    - {fileID: -6405894770105334649, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}
+    - {fileID: -3389071531951017348, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}
+    - {fileID: 5750558598118382334, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}
+    - {fileID: -9106599733787235357, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}
+    - {fileID: 8219109373191576876, guid: 915411977a98c5640bb6050c4a5fbe01, type: 3}

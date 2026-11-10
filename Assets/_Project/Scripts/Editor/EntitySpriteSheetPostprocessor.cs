@@ -1,11 +1,15 @@
+using System.Collections.Generic;
+using CoffeeSpec.Core;
 using UnityEditor;
 using UnityEngine;
 
 namespace CoffeeSpec.EditorTools
 {
     /// <summary>
-    /// Resources의 애니메이션 시트(PlayerCat, Pigeon)를 점 필터, 32 PPU, 같은 너비 컷으로 자르고
+    /// Sprite/Object의 애니메이션 시트(PlayerCat, Pigeon, CatEnter, DoorFlap)를 점 필터, 32 PPU, 같은 너비 컷으로 자르고
     /// 각 프리팹의 기본 그림을 첫 컷(대기)으로 맞춘다. 실제 재생은 EntitySpriteAnimator가 한다.
+    /// Resources 밖이라 실행 중에 이름으로 못 찾으므로, 자른 컷을 SpriteSheetLibrary 에셋에 담고
+    /// 빌드 시작 때 미리 불러오도록 Player Settings의 Preloaded Assets에 넣어 둔다.
     /// </summary>
     [InitializeOnLoad]
     internal sealed class EntitySpriteSheetPostprocessor : AssetPostprocessor
@@ -14,6 +18,83 @@ namespace CoffeeSpec.EditorTools
         static EntitySpriteSheetPostprocessor()
         {
             EditorApplication.delayCall += ReimportIfStale;
+            EditorApplication.delayCall += RefreshLibrary;
+        }
+
+        private static bool _refreshQueued;
+
+        private static void QueueRefreshLibrary()
+        {
+            if (_refreshQueued) return;
+            _refreshQueued = true;
+            EditorApplication.delayCall += RefreshLibrary;
+        }
+
+        // 각 시트의 컷을 번호 순서로 SpriteSheetLibrary에 담는다. 바뀐 게 있을 때만 저장한다
+        private static void RefreshLibrary()
+        {
+            _refreshQueued = false;
+            if (EditorApplication.isPlayingOrWillChangePlaymode || EditorApplication.isUpdating || EditorApplication.isCompiling)
+            {
+                QueueRefreshLibrary();
+                return;
+            }
+
+            var entries = new List<SpriteSheetLibrary.Sheet>();
+            foreach (var sheet in Sheets)
+            {
+                var frames = new List<Sprite>();
+                foreach (var obj in AssetDatabase.LoadAllAssetsAtPath(sheet.TexturePath))
+                    if (obj is Sprite sprite) frames.Add(sprite);
+                if (frames.Count == 0)
+                {
+                    Debug.LogWarning($"[EntitySpriteSheetPostprocessor] {sheet.TexturePath} 에 컷이 없어 SpriteSheetLibrary에 넣지 못했다");
+                    continue;
+                }
+                frames.Sort((a, b) => FrameIndex(a.name).CompareTo(FrameIndex(b.name)));
+                entries.Add(new SpriteSheetLibrary.Sheet { Name = sheet.Name, Frames = frames.ToArray() });
+            }
+
+            var library = AssetDatabase.LoadAssetAtPath<SpriteSheetLibrary>(SpriteSheetLibrary.AssetPath);
+            if (library == null)
+            {
+                string folder = System.IO.Path.GetDirectoryName(SpriteSheetLibrary.AssetPath).Replace('\\', '/');
+                if (!AssetDatabase.IsValidFolder(folder))
+                {
+                    Debug.LogWarning($"[EntitySpriteSheetPostprocessor] {folder} 폴더가 없어 SpriteSheetLibrary를 만들지 못했다");
+                    return;
+                }
+                library = ScriptableObject.CreateInstance<SpriteSheetLibrary>();
+                AssetDatabase.CreateAsset(library, SpriteSheetLibrary.AssetPath);
+                Debug.Log($"[EntitySpriteSheetPostprocessor] {SpriteSheetLibrary.AssetPath} 를 만들었다");
+            }
+
+            if (library.SetSheets(entries.ToArray()))
+            {
+                EditorUtility.SetDirty(library);
+                AssetDatabase.SaveAssetIfDirty(library);
+                Debug.Log($"[EntitySpriteSheetPostprocessor] SpriteSheetLibrary 갱신: 시트 {entries.Count}개");
+            }
+
+            EnsurePreloaded(library);
+        }
+
+        // 빌드에서는 Preloaded Assets에 들어 있어야 시작할 때 불러와져 코드가 찾을 수 있다
+        private static void EnsurePreloaded(SpriteSheetLibrary library)
+        {
+            var preloaded = new List<Object>(PlayerSettings.GetPreloadedAssets());
+            if (preloaded.Contains(library)) return;
+            preloaded.RemoveAll(o => o == null || o is SpriteSheetLibrary);
+            preloaded.Add(library);
+            PlayerSettings.SetPreloadedAssets(preloaded.ToArray());
+            AssetDatabase.SaveAssets();
+            Debug.Log("[EntitySpriteSheetPostprocessor] SpriteSheetLibrary를 Player Settings > Preloaded Assets에 넣었다");
+        }
+
+        private static int FrameIndex(string name)
+        {
+            int u = name.LastIndexOf('_');
+            return u >= 0 && int.TryParse(name.Substring(u + 1), out int n) ? n : int.MaxValue;
         }
 
         private static void ReimportIfStale()
@@ -40,7 +121,7 @@ namespace CoffeeSpec.EditorTools
             internal Sheet(string name, string prefabPath, int cellWidth, int cellHeight, int frameCount)
             {
                 Name = name;
-                TexturePath = $"Assets/_Project/Resources/{name}.png";
+                TexturePath = $"Assets/_Project/Sprite/Object/{name}.png";
                 PrefabPath = prefabPath;
                 CellWidth = cellWidth;
                 CellHeight = cellHeight;
@@ -110,23 +191,18 @@ namespace CoffeeSpec.EditorTools
 
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
+            bool touched = false;
             foreach (string asset in importedAssets)
             {
-                if (TryFind(asset, out var sheet)) AssignIdleToPrefab(sheet);
+                if (TryFind(asset, out var sheet)) { AssignIdleToPrefab(sheet); touched = true; }
             }
-        }
-
-        [MenuItem("CoffeeSpec/고양이·비둘기 애니메이션 다시 넣기")]
-        private static void MenuAssign()
-        {
-            foreach (var sheet in Sheets)
+            foreach (string asset in movedAssets)
             {
-                AssetDatabase.ImportAsset(sheet.TexturePath, ImportAssetOptions.ForceUpdate);
-                if (AssignIdleToPrefab(sheet))
-                    Debug.Log($"[SpriteSheet] {sheet.PrefabPath}에 {sheet.Name}_0 을 넣었다.");
-                else
-                    Debug.LogWarning($"[SpriteSheet] {sheet.TexturePath} 또는 {sheet.PrefabPath}를 찾지 못했다.");
+                if (TryFind(asset, out var sheet)) { AssignIdleToPrefab(sheet); touched = true; }
             }
+            foreach (string asset in deletedAssets) if (TryFind(asset, out _)) touched = true;
+            foreach (string asset in movedFromAssetPaths) if (TryFind(asset, out _)) touched = true;
+            if (touched) QueueRefreshLibrary();
         }
 
         private static bool AssignIdleToPrefab(Sheet sheet)

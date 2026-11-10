@@ -55,7 +55,6 @@ namespace CoffeeSpec.Rules.Entities
             _owner.Word = id;
             // 무적은 살아난 직후 같은 가시에 또 죽지 않게 하려는 것이다. 살아 있는 채로 번갈아 변신할 때까지 주면 계속 무적이 되어 죽지 않는다
             if (revived) _owner.StartTransformInvincible();
-            RuleManager.Trace($"TransformInto {_owner.name} -> {id} revived={revived} pos={_owner.transform.position}"); // TEMP TRACE
             _owner.StartTransformLock();
 
             // 발 위치를 유지해야 커진 콜라이더가 바닥에 박히지 않는다

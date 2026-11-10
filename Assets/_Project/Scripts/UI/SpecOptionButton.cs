@@ -62,11 +62,20 @@ namespace CoffeeSpec.UI
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
 
-            var image = outlineObject.AddComponent<Image>();
-            image.sprite = outlineSprite;
-            image.type = outlineSprite.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
-            image.color = color;
-            image.raycastTarget = false;
+            // 1px 링 스프라이트는 작은 화면에서 위·아래가 끊기므로, 화면 픽셀 두께가 보장되는 선으로 그린다
+            var border = outlineObject.AddComponent<UILineBorder>();
+            border.color = color;
+            border.raycastTarget = false;
+
+            // 칩 바탕 Image도 같은 링 스프라이트(회색)라 작은 화면에서 끊긴 회색 점이 비친다.
+            // 끌기 입력은 이 Image가 받으므로 끄지 않고 투명하게만 만든다 (투명해도 레이캐스트는 받음)
+            var background = GetComponent<Image>();
+            if (background != null && background.sprite == outlineSprite)
+            {
+                Color clear = background.color;
+                clear.a = 0f;
+                background.color = clear;
+            }
         }
 
         public void SetUsed(bool used)

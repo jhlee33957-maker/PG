@@ -17,7 +17,7 @@ MonoBehaviour:
   - NounTouchNoun, !Spike !Die
   - 
   - NounIsNoun, Pigeon !Fly
-  - NounIsNoun, Exit Move
+  - NounIsNoun, Exit !Move
   - 
   - NounIfNounIsNoun, !Person Move Pigeon
   - NounIfNounIsNoun, _ Die !Person

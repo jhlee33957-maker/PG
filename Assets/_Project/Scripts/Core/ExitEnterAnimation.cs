@@ -7,7 +7,7 @@ namespace CoffeeSpec.Core
 {
     /// <summary>
     /// 클리어 순간 고양이가 출구 문 앞까지 걸어가 캣도어로 쏙 들어가고, 문 플랩이 흔들리다 닫히는 연출.
-    /// 고양이 그림(Resources/CatEnter)과 문 그림(Resources/DoorFlap)은 따로 된 시트다.
+    /// 고양이 그림(Sprite/Object/CatEnter)과 문 그림(Sprite/Object/DoorFlap)은 따로 된 시트다.
     /// 조종 대상이 고양이(PlayerCat)이고 근처에 출구 문(Proto_Exit)이 있을 때만 재생하고,
     /// 변신 등으로 다른 모습이면 아무것도 하지 않아 기존 클리어 흐름이 그대로 간다.
     /// 기획서가 열려 timeScale이 0이어도 멈추지 않게 실제 시간으로 돈다.
@@ -46,6 +46,8 @@ namespace CoffeeSpec.Core
         private Rigidbody2D _doorBody;
         private RigidbodyType2D _doorBodyType;
         private bool _doorFrozen;
+        private bool _doorWasSimulated;
+        private Vector3 _doorPosition;
         private SpriteRenderer _view;
 
         /// <summary>연출을 시작한다. 재생하지 못하면 false. duration은 플랩이 닫힐 때까지 걸리는 시간(초).</summary>
@@ -187,17 +189,35 @@ namespace CoffeeSpec.Core
         private void FreezeDoor(SpriteRenderer doorRenderer)
         {
             _doorBody = doorRenderer.GetComponentInParent<Rigidbody2D>();
-            if (_doorBody == null || _doorBody.bodyType == RigidbodyType2D.Static) return;
+            // 출구는 원래 Static인데 Move 규칙이면 MovePosition으로 움직인다. Static이어도 그냥 넘기지 않고 고정한다
+            if (_doorBody == null) return;
             _doorBodyType = _doorBody.bodyType;
             _doorBody.linearVelocity = Vector2.zero;
             _doorBody.angularVelocity = 0f;
             _doorBody.bodyType = RigidbodyType2D.Static;
+            _doorWasSimulated = _doorBody.simulated;
+            _doorBody.simulated = false;
+            _doorPosition = _doorBody.transform.position;
             _doorFrozen = true;
+        }
+
+        // 문장이 다시 적용되면(날기를 껐다 켬) 규칙 쪽에서 바디가 Dynamic으로 돌아가 문이 다시 움직인다.
+        // 연출 동안은 매 프레임 다시 굳히고 자리를 되돌린다
+        private void LateUpdate()
+        {
+            if (!_doorFrozen || _doorBody == null) return;
+            if (_doorBody.bodyType != RigidbodyType2D.Static) _doorBody.bodyType = RigidbodyType2D.Static;
+            if (_doorBody.simulated) _doorBody.simulated = false;
+            if (_doorBody.transform.position != _doorPosition) _doorBody.transform.position = _doorPosition;
         }
 
         private void Restore()
         {
-            if (_doorFrozen && _doorBody != null && _doorBody.bodyType == RigidbodyType2D.Static) _doorBody.bodyType = _doorBodyType;
+            if (_doorFrozen && _doorBody != null)
+            {
+                _doorBody.simulated = _doorWasSimulated;
+                if (_doorBody.bodyType == RigidbodyType2D.Static) _doorBody.bodyType = _doorBodyType;
+            }
             _doorFrozen = false;
             if (_playerRenderer != null) _playerRenderer.enabled = true;
             if (_body != null) _body.simulated = _bodyWasSimulated;
@@ -212,10 +232,10 @@ namespace CoffeeSpec.Core
         // 잘라 둔 컷을 이름 끝 번호 순서로 가져온다
         private static Sprite[] LoadFrames(string key, int count)
         {
-            var sprites = Resources.LoadAll<Sprite>(key);
+            var sprites = SpriteSheetLibrary.GetFrames(key);
             if (sprites == null || sprites.Length < count)
             {
-                Debug.LogWarning($"[ExitEnterAnimation] Resources/{key} 컷이 {count}개보다 적어 연출을 건너뜀");
+                Debug.LogWarning($"[ExitEnterAnimation] {key} 시트 컷이 {count}개보다 적어 연출을 건너뜀");
                 return null;
             }
             System.Array.Sort(sprites, (a, b) => Index(a.name).CompareTo(Index(b.name)));
