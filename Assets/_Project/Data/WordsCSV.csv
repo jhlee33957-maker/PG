@@ -1,5 +1,5 @@
 ﻿Id,DisplayName,Type,If DisplayName,ac DisplayName
-Person,사람,Noun,,
+Person,고양이,Noun,,
 Pigeon,비둘기,Noun,,
 Move,움직인다,Verb,움직이,움직이게 한다
 Wall,벽,Noun,,
@@ -7,7 +7,7 @@ Exit,출구,Noun,,
 Fly,난다,Verb,날,날게 한다
 Control,조종 할 수 있다,Verb,조종 할 수 있으,조종 할 수 있게 한다
 Win,도착지점이다,Verb,도착지점이,도착지점이되게 한다
-Monster,몬스터,Noun,,
+Monster,고슴도치,Noun,,
 Spike,가시,Noun,,
 Die,사망한다,Verb,사망하,사망시킨다
 Tread,밟힌다,Verb,밟히,밟힌 상태로 만든다

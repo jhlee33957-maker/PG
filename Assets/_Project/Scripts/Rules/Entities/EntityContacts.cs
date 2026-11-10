@@ -91,13 +91,15 @@ namespace CoffeeSpec.Rules.Entities
             foreach (var c in _touching)
                 if (!IsValid(c, _owners[c])) _stale.Add(c);
             bool changed = _stale.Count > 0;
+            RuleEntity lost = null;
             foreach (var c in _stale)
             {
+                if (lost == null) _owners.TryGetValue(c, out lost);
                 _touching.Remove(c);
                 ForgetCollider(c);
             }
             _stale.Clear();
-            if (changed) NotifyTouchSetChanged();
+            if (changed) NotifyTouchSetChanged(lost, ended: true);
         }
 
         private void ForgetCollider(Collider2D collider)
@@ -110,12 +112,12 @@ namespace CoffeeSpec.Rules.Entities
             if (_peers.Remove(entity)) entity.ContactsInvalidated -= _onPeerInvalidated;
         }
 
-        private void NotifyTouchSetChanged()
+        private void NotifyTouchSetChanged(RuleEntity other = null, bool ended = false)
         {
             bool touched = HasTouch();
             bool changed = _hadTouch != touched;
             _hadTouch = touched;
-            _owner.Manager?.NotifyTouchChanged(_owner, changed);
+            _owner.Manager?.NotifyTouchChanged(_owner, changed, other, ended);
         }
 
         private void NotifyTreadStateChanged()
@@ -141,7 +143,7 @@ namespace CoffeeSpec.Rules.Entities
             _stale.Clear();
             _treaders.Remove(entity);
             NotifyTreadStateChanged();
-            if (changed) NotifyTouchSetChanged();
+            if (changed) NotifyTouchSetChanged(entity, ended: true);
         }
 
         /// <summary>같은 대상의 여러 콜라이더를 한 번만 담는다. 현재 태그는 캐시하지 않는다.</summary>
@@ -163,9 +165,10 @@ namespace CoffeeSpec.Rules.Entities
             if (other == null || (_rigidbody != null && other.attachedRigidbody == _rigidbody)) return;
             PruneInvalidContacts();
             bool changed;
+            RuleEntity entity = null;
             if (entering)
             {
-                var entity = ResolveCollider(other);
+                entity = ResolveCollider(other);
                 if (IsValid(other, entity)) changed = _touching.Add(other);
                 else
                 {
@@ -175,10 +178,11 @@ namespace CoffeeSpec.Rules.Entities
             }
             else
             {
+                _owners.TryGetValue(other, out entity);
                 changed = _touching.Remove(other);
                 ForgetCollider(other);
             }
-            if (changed) NotifyTouchSetChanged();
+            if (changed) NotifyTouchSetChanged(entity, ended: !entering);
         }
 
         internal void SetTouchable(bool on)

@@ -79,7 +79,6 @@ namespace CoffeeSpec.Rules.Entities
                 float moved = (_rigidbody.position.x - _moveSampleX) * _moveSign;
                 if (moved < _moveExpectedDx * StallRatio)
                 {
-                    RuleManager.Trace($"Move stall turn {_owner.name} id={_owner.Id} pos={_rigidbody.position} moved={moved:F4} expected={_moveExpectedDx:F4} fly={_owner.Fly.IsFlying}"); // TEMP TRACE
                     TurnAround();
                 }
             }

@@ -74,7 +74,9 @@ namespace CoffeeSpec.UI
         private static readonly Color LockedImageColor = Color.black;
 
         private const string NewGameTitle = "정말 처음부터 할까요?";
-        private const string NewGameMessage = "<color=#E8913B>\u26A0</color> 클리어 기록이 모두 지워지고 스테이지 1부터 시작합니다.";
+        // 팝업 Message는 자동 줄바꿈이 꺼져 있어(NoWrap) 길면 창 밖으로 나간다. 그래서 문구 안에서 직접 줄을 나눈다.
+        // 둘째 줄 앞에는 첫 줄의 '⚠ '와 똑같은 글자를 투명하게 넣어, 글꼴과 상관없이 '스테이지'가 '클리어'와 같은 세로줄에서 시작하게 한다
+        private const string NewGameMessage = "<color=#E8913B>\u26A0</color> 클리어 기록이 모두 지워지고\n<color=#00000000>\u26A0</color> 스테이지 1부터 시작합니다.";
 
         // 새 게임 확인 팝업. 전체 클리어 팝업과 모양·버튼 배치가 같아서 실행할 때 복제해 문구만 바꿔 쓴다
         private Popup _newGamePopup;
@@ -146,10 +148,12 @@ namespace CoffeeSpec.UI
         /// </summary>
         private void RefreshTitleButtons()
         {
+            SaveData save = LoadSave();
             if (_btnStageSelect != null)
             {
-                _btnStageSelect.interactable = LoadSave() != null;
+                _btnStageSelect.interactable = save != null;
             }
+            RefreshStageButtons(save);
         }
 
         // ---------------- 버튼 동작 ----------------
@@ -368,8 +372,8 @@ namespace CoffeeSpec.UI
         }
 
         /// <summary>
-        /// 해제된 스테이지는 버튼을 켜고 이미지를 원래 색으로,
-        /// 잠긴 스테이지는 버튼을 끄고 이미지를 검은색으로 만든다.
+        /// 해제된 스테이지는 버튼을 켜고 이미지를 원래 색으로, 섬네일을 보여 준다.
+        /// 잠긴 스테이지는 버튼을 끄고 이미지를 검은색으로 만들며 섬네일을 숨긴다.
         /// </summary>
         private void RefreshStageButtons(SaveData save)
         {
@@ -383,6 +387,11 @@ namespace CoffeeSpec.UI
                 if (stage.Button != null)
                 {
                     stage.Button.interactable = unlocked;
+                    Transform thumb = stage.Button.transform.Find("Thumb");
+                    if (thumb != null)
+                    {
+                        thumb.gameObject.SetActive(unlocked);
+                    }
                 }
 
                 if (stage.Image != null)
