@@ -1,0 +1,722 @@
+﻿using System;
+using System.Collections.Generic;
+using CoffeeSpec.Core;
+using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+namespace CoffeeSpec.UI
+{
+    /// <summary>
+    /// 스테이지에서 ESC를 누르면 뜨는 2단 메뉴. 1단: 설정 / 메인화면 / 게임종료, 2단(설정): 배경음악·효과음 볼륨, 화면모드, 해상도.
+    /// 씬·프리팹을 고치지 않아도 되게 게임이 켜질 때 한 번 만들어 씬이 바뀌어도 남기고, 화면도 전부 코드로 그린다.
+    /// 디자인은 귀 없는 둥근 창 + 선택한 줄 옆에 앉아 있는 플레이어 고양이(커서) 시안(C안 수정)을 따른다.
+    /// </summary>
+    public sealed class PauseMenu : MonoBehaviour
+    {
+        // ---------------- 시안 색 ----------------
+        private static readonly Color PanelColor = Hex(0x22252E);
+        private static readonly Color EdgeColor = Hex(0x7FA3C8);
+        private static readonly Color RowColor = Hex(0x2F3A4C);
+        private static readonly Color AccentColor = Hex(0xE8913B);
+        private static readonly Color TextColor = Hex(0xDCDFE4);
+        private static readonly Color HintColor = Hex(0x5C6370);
+        private static readonly Color TrackColor = Hex(0x3A3F4B);
+        private static readonly Color KnobColor = Hex(0xF5C189);
+        private static readonly Color DimColor = new Color(10f / 255f, 10f / 255f, 14f / 255f, 0.67f);
+
+        private const string TitleSceneName = "Title";
+        private const string CatSheet = "PlayerCat";
+        // 화면 전환 페이드(1000)보다는 아래, 기획서·클리어 화면(100)보다는 위
+        private const int SortingOrder = 900;
+        private const float VolumeStep = 0.05f;
+        private const float CatFrameTime = 0.5f;
+
+        private static PauseMenu _instance;
+
+        /// <summary>메뉴가 열려 있으면 true. 다른 스크립트가 입력을 막을 때 쓸 수 있다.</summary>
+        public static bool IsOpen => _instance != null && _instance._page != Page.Closed;
+
+        private enum Page { Closed, Main, Settings }
+
+        private Page _page = Page.Closed;
+        private float _timeScaleBeforeOpen = 1f;
+
+        private GameObject _root;
+        private GameObject _mainPanel;
+        private GameObject _settingsPanel;
+        private TMP_FontAsset _font;
+        private Sprite _roundFill;
+        private Sprite _roundEdge;
+        private Sprite _circle;
+
+        private readonly List<Row> _mainRows = new List<Row>();
+        private readonly List<Row> _settingRows = new List<Row>();
+        private int _mainIndex;
+        private int _settingIndex;
+
+        private Image _cat;
+        private Sprite[] _catFrames;
+        private float _catTimer;
+        private int _catFrame;
+
+        private VolumeSlider _bgmSlider;
+        private VolumeSlider _sfxSlider;
+        private ModeButton _fullButton;
+        private ModeButton _windowButton;
+        private TextMeshProUGUI _resolutionText;
+        private Image _applyButton;
+
+        private readonly List<Vector2Int> _resolutions = new List<Vector2Int>();
+        private bool _pendingFullscreen;
+        private int _pendingResolution;
+
+        // 한 줄. 마우스를 올리면 선택되고, 클릭·Enter면 Submit, 좌우 키면 Adjust
+        private sealed class Row
+        {
+            public RectTransform Rect;
+            public Image Highlight;
+            public TextMeshProUGUI Label;
+            public Action Submit;
+            public Action<int> Adjust;
+        }
+
+        // ---------------- 생성 ----------------
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void Create()
+        {
+            if (_instance != null) return;
+            var go = new GameObject("PauseMenu");
+            DontDestroyOnLoad(go);
+            _instance = go.AddComponent<PauseMenu>();
+        }
+
+        private void Awake()
+        {
+            SceneManager.activeSceneChanged += OnSceneChanged;
+        }
+
+        private void OnDestroy()
+        {
+            SceneManager.activeSceneChanged -= OnSceneChanged;
+            GameSettings.VolumeChanged -= RefreshSettingVisuals;
+            if (_instance == this) _instance = null;
+        }
+
+        // 메뉴가 열린 채 씬이 바뀌면(리트 등) 다음 씬이 멈춰 있지 않게 닫고 시간을 되돌린다
+        private void OnSceneChanged(Scene from, Scene to)
+        {
+            if (_page == Page.Closed) return;
+            SetPage(Page.Closed);
+            Time.timeScale = 1f;
+        }
+
+        // ---------------- 입력 ----------------
+
+        private void Update()
+        {
+            var kb = Keyboard.current;
+            if (kb == null) return;
+
+            if (kb.escapeKey.wasPressedThisFrame)
+            {
+                OnEscape();
+                return;
+            }
+            if (_page == Page.Closed) return;
+
+            AnimateCat();
+
+            bool up = kb.upArrowKey.wasPressedThisFrame || kb.wKey.wasPressedThisFrame;
+            bool down = kb.downArrowKey.wasPressedThisFrame || kb.sKey.wasPressedThisFrame;
+            bool left = kb.leftArrowKey.wasPressedThisFrame || kb.aKey.wasPressedThisFrame;
+            bool right = kb.rightArrowKey.wasPressedThisFrame || kb.dKey.wasPressedThisFrame;
+            bool submit = kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame;
+
+            var rows = _page == Page.Main ? _mainRows : _settingRows;
+            int index = _page == Page.Main ? _mainIndex : _settingIndex;
+            if (up) Select((index - 1 + rows.Count) % rows.Count);
+            if (down) Select((index + 1) % rows.Count);
+            index = _page == Page.Main ? _mainIndex : _settingIndex;
+            if (left) rows[index].Adjust?.Invoke(-1);
+            if (right) rows[index].Adjust?.Invoke(1);
+            if (submit) rows[index].Submit?.Invoke();
+        }
+
+        private void OnEscape()
+        {
+            switch (_page)
+            {
+                case Page.Closed:
+                    // 일시정지는 스테이지에서만. 화면이 넘어가는 중에는 열지 않는다
+                    if (SceneFader.IsLoading) return;
+                    if (!StageScenes.TryGetStageNumber(SceneManager.GetActiveScene().name, out _)) return;
+                    Open();
+                    break;
+                case Page.Main:
+                    Close();
+                    break;
+                case Page.Settings:
+                    // 적용 안 한 화면 설정은 버리고 1단으로 돌아간다 (볼륨은 움직이는 즉시 저장됨)
+                    SetPage(Page.Main);
+                    break;
+            }
+        }
+
+        private void Open()
+        {
+            EnsureBuilt();
+            EnsureEventSystem();
+            // 기획서가 열려 이미 0이었으면 닫을 때도 0으로 돌려놓아야 기획서 상태가 안 깨진다
+            _timeScaleBeforeOpen = Time.timeScale;
+            Time.timeScale = 0f;
+            _mainIndex = 0;
+            SetPage(Page.Main);
+        }
+
+        private void Close()
+        {
+            SetPage(Page.Closed);
+            Time.timeScale = _timeScaleBeforeOpen;
+        }
+
+        private void SetPage(Page page)
+        {
+            _page = page;
+            if (_root == null) return;
+            _root.SetActive(page != Page.Closed);
+            _mainPanel.SetActive(page == Page.Main);
+            _settingsPanel.SetActive(page == Page.Settings);
+            if (page == Page.Settings)
+            {
+                LoadPendingDisplay();
+                _settingIndex = 0;
+            }
+            if (page != Page.Closed) Select(page == Page.Main ? _mainIndex : _settingIndex);
+        }
+
+        private void Select(int index)
+        {
+            var rows = _page == Page.Main ? _mainRows : _settingRows;
+            if (_page == Page.Main) _mainIndex = index; else _settingIndex = index;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                bool on = i == index;
+                if (rows[i].Highlight != null) rows[i].Highlight.enabled = on;
+                if (rows[i].Label != null) rows[i].Label.color = on ? AccentColor : TextColor;
+            }
+            RefreshSettingVisuals();
+
+            // 고양이 커서를 선택한 줄 왼쪽에 앉힌다. 적용 버튼 줄은 커서 대신 버튼 색으로 보여 준다
+            var row = rows[index];
+            bool showCat = row.Label != null;
+            _cat.gameObject.SetActive(showCat);
+            if (showCat)
+            {
+                _cat.rectTransform.SetParent(row.Rect, false);
+                _cat.rectTransform.anchoredPosition = new Vector2(_page == Page.Main ? 40f : 20f, 0f);
+            }
+        }
+
+        private void AnimateCat()
+        {
+            if (_catFrames == null || _catFrames.Length < 2) return;
+            _catTimer += Time.unscaledDeltaTime;
+            if (_catTimer < CatFrameTime) return;
+            _catTimer = 0f;
+            _catFrame = 1 - _catFrame;
+            _cat.sprite = _catFrames[_catFrame];
+        }
+
+        // ---------------- 1단 메뉴 동작 ----------------
+
+        private void GoToTitle()
+        {
+            if (SceneFader.IsLoading) return;
+            SetPage(Page.Closed);
+            // 타이틀이 멈춘 채로 뜨지 않게 시간부터 되돌린다 (페이드는 실제 시간으로 돈다)
+            Time.timeScale = 1f;
+            SceneFader.LoadScene(TitleSceneName);
+        }
+
+        private static void QuitGame()
+        {
+#if UNITY_EDITOR
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
+        }
+
+        // ---------------- 2단 설정 동작 ----------------
+
+        private void LoadPendingDisplay()
+        {
+            _resolutions.Clear();
+            foreach (var r in Screen.resolutions)
+            {
+                var size = new Vector2Int(r.width, r.height);
+                if (size.x < 1280 || size.y < 720 || _resolutions.Contains(size)) continue;
+                _resolutions.Add(size);
+            }
+            // 에디터 등에서 목록이 비면 흔한 16:9 해상도로 채운다
+            if (_resolutions.Count == 0)
+            {
+                _resolutions.Add(new Vector2Int(1280, 720));
+                _resolutions.Add(new Vector2Int(1600, 900));
+                _resolutions.Add(new Vector2Int(1920, 1080));
+                _resolutions.Add(new Vector2Int(2560, 1440));
+            }
+            var current = GameSettings.IsFullscreen ? GameSettings.SavedResolution : new Vector2Int(Screen.width, Screen.height);
+            if (!_resolutions.Contains(current)) _resolutions.Add(current);
+            _resolutions.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
+
+            _pendingResolution = _resolutions.IndexOf(current);
+            _pendingFullscreen = GameSettings.IsFullscreen;
+            RefreshSettingVisuals();
+        }
+
+        private void ChangeResolution(int dir)
+        {
+            if (_resolutions.Count == 0) return;
+            _pendingResolution = Mathf.Clamp(_pendingResolution + dir, 0, _resolutions.Count - 1);
+            RefreshSettingVisuals();
+        }
+
+        private void SetPendingFullscreen(bool fullscreen)
+        {
+            _pendingFullscreen = fullscreen;
+            RefreshSettingVisuals();
+        }
+
+        private void ApplyDisplay()
+        {
+            if (_resolutions.Count == 0) return;
+            var size = _resolutions[_pendingResolution];
+            GameSettings.ApplyDisplay(size.x, size.y, _pendingFullscreen);
+        }
+
+        private void RefreshSettingVisuals()
+        {
+            if (_settingsPanel == null) return;
+            _bgmSlider.Refresh(GameSettings.BgmVolume, _settingIndex == 0 && _page == Page.Settings);
+            _sfxSlider.Refresh(GameSettings.SfxVolume, _settingIndex == 1 && _page == Page.Settings);
+            _fullButton.Refresh(_pendingFullscreen);
+            _windowButton.Refresh(!_pendingFullscreen);
+            if (_resolutions.Count > 0 && _pendingResolution >= 0)
+            {
+                var size = _resolutions[_pendingResolution];
+                _resolutionText.text = $"{size.x} × {size.y}";
+            }
+            bool applySelected = _page == Page.Settings && _settingIndex == _settingRows.Count - 1;
+            _applyButton.color = applySelected ? KnobColor : AccentColor;
+        }
+
+        // ---------------- 화면 만들기 ----------------
+
+        private void EnsureBuilt()
+        {
+            if (_root != null) return;
+
+            _font = FindFont();
+            _roundFill = MakeRoundSprite(64, 16, 0);
+            _roundEdge = MakeRoundSprite(64, 16, 3);
+            _circle = MakeRoundSprite(64, 32, 0);
+            _catFrames = LoadCatFrames();
+
+            var canvasGo = new GameObject("PauseMenuCanvas", typeof(RectTransform));
+            canvasGo.transform.SetParent(transform, false);
+            var canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = SortingOrder;
+            var scaler = canvasGo.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+            canvasGo.AddComponent<GraphicRaycaster>();
+            _root = canvasGo;
+
+            // 화면 전체를 어둡게 덮어 뒤쪽 기획서·버튼이 눌리지 않게 막는다
+            var dim = NewImage("Dim", canvasGo.transform, null, DimColor);
+            Stretch(dim.rectTransform);
+
+            BuildMainPanel(canvasGo.transform);
+            BuildSettingsPanel(canvasGo.transform);
+
+            _cat = NewImage("CatCursor", canvasGo.transform, _catFrames.Length > 0 ? _catFrames[0] : null, Color.white);
+            _cat.preserveAspect = true;
+            _cat.raycastTarget = false;
+            var catRect = _cat.rectTransform;
+            catRect.anchorMin = catRect.anchorMax = new Vector2(0f, 0.5f);
+            catRect.pivot = new Vector2(0f, 0.5f);
+            catRect.sizeDelta = new Vector2(72f, 60f);
+
+            _root.SetActive(false);
+        }
+
+        private void BuildMainPanel(Transform parent)
+        {
+            _mainPanel = BuildPanel(parent, "MainPanel", new Vector2(640f, 520f), "PAUSED");
+            string[] labels = { "설정", "메인화면", "게임종료" };
+            Action[] actions = { () => SetPage(Page.Settings), GoToTitle, QuitGame };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var row = NewRow(_mainPanel.transform, i, new Vector2(560f, 92f), -150f - i * 120f, _mainRows, true);
+                row.Label = NewText("Label", row.Rect, labels[i], 48f, TextColor, TextAlignmentOptions.MidlineLeft);
+                Place(row.Label.rectTransform, new Vector2(140f, 0f), new Vector2(380f, 80f));
+                row.Submit = actions[i];
+            }
+        }
+
+        private void BuildSettingsPanel(Transform parent)
+        {
+            _settingsPanel = BuildPanel(parent, "SettingsPanel", new Vector2(1000f, 680f), "SETTINGS");
+            string[] labels = { "배경음악", "효과음", "화면모드", "해상도" };
+            for (int i = 0; i < labels.Length; i++)
+            {
+                var row = NewRow(_settingsPanel.transform, i, new Vector2(960f, 88f), -130f - i * 108f, _settingRows, false);
+                row.Label = NewText("Label", row.Rect, labels[i], 40f, TextColor, TextAlignmentOptions.MidlineLeft);
+                Place(row.Label.rectTransform, new Vector2(110f, 0f), new Vector2(260f, 70f));
+            }
+
+            // 볼륨: 좌우 키 5%씩, 마우스로 잡고 끌기. 움직이는 즉시 소리에 반영하고 저장한다
+            _bgmSlider = new VolumeSlider(this, _settingRows[0].Rect, GameSettings.SetBgmVolume);
+            _settingRows[0].Adjust = d => GameSettings.SetBgmVolume(GameSettings.BgmVolume + d * VolumeStep);
+            _sfxSlider = new VolumeSlider(this, _settingRows[1].Rect, GameSettings.SetSfxVolume);
+            _settingRows[1].Adjust = d => GameSettings.SetSfxVolume(GameSettings.SfxVolume + d * VolumeStep);
+            GameSettings.VolumeChanged += RefreshSettingVisuals;
+
+            // 화면모드: 두 버튼 중 하나. 좌우 키로 바꾸고 적용을 눌러야 실제로 바뀐다
+            _fullButton = new ModeButton(this, _settingRows[2].Rect, "전체화면", new Vector2(400f, 0f), () => SetPendingFullscreen(true));
+            _windowButton = new ModeButton(this, _settingRows[2].Rect, "창모드", new Vector2(640f, 0f), () => SetPendingFullscreen(false));
+            _settingRows[2].Adjust = d => SetPendingFullscreen(d < 0);
+            _settingRows[2].Submit = ApplyDisplay;
+
+            // 해상도: < 값 > 화살표. 좌우 키로 고르고 적용을 눌러야 바뀐다
+            var resRow = _settingRows[3].Rect;
+            var leftArrow = NewText("Prev", resRow, "<", 40f, TextColor, TextAlignmentOptions.Center);
+            Place(leftArrow.rectTransform, new Vector2(400f, 0f), new Vector2(60f, 70f));
+            AddClick(leftArrow.gameObject, () => { Select(3); ChangeResolution(-1); });
+            _resolutionText = NewText("Value", resRow, "", 36f, TextColor, TextAlignmentOptions.Center);
+            Place(_resolutionText.rectTransform, new Vector2(460f, 0f), new Vector2(300f, 70f));
+            _resolutionText.raycastTarget = false;
+            var rightArrow = NewText("Next", resRow, ">", 40f, TextColor, TextAlignmentOptions.Center);
+            Place(rightArrow.rectTransform, new Vector2(760f, 0f), new Vector2(60f, 70f));
+            AddClick(rightArrow.gameObject, () => { Select(3); ChangeResolution(1); });
+            _settingRows[3].Adjust = ChangeResolution;
+            _settingRows[3].Submit = ApplyDisplay;
+
+            // 아래쪽: 왼쪽 'ESC 뒤로'(클릭해도 뒤로), 오른쪽 '적용' 버튼(키보드로는 마지막 줄)
+            var panelRect = (RectTransform)_settingsPanel.transform;
+            var back = NewText("Back", panelRect, "ESC 뒤로", 28f, HintColor, TextAlignmentOptions.MidlineLeft);
+            back.rectTransform.anchorMin = back.rectTransform.anchorMax = new Vector2(0f, 0f);
+            back.rectTransform.pivot = new Vector2(0f, 0f);
+            back.rectTransform.anchoredPosition = new Vector2(48f, 36f);
+            back.rectTransform.sizeDelta = new Vector2(200f, 60f);
+            AddClick(back.gameObject, () => SetPage(Page.Main));
+
+            _applyButton = NewImage("Apply", panelRect, _roundFill, AccentColor);
+            _applyButton.type = Image.Type.Sliced;
+            _applyButton.pixelsPerUnitMultiplier = 1f;
+            var applyRect = _applyButton.rectTransform;
+            applyRect.anchorMin = applyRect.anchorMax = new Vector2(1f, 0f);
+            applyRect.pivot = new Vector2(1f, 0f);
+            applyRect.anchoredPosition = new Vector2(-48f, 32f);
+            applyRect.sizeDelta = new Vector2(212f, 68f);
+            var applyText = NewText("Text", applyRect, "적용", 36f, PanelColor, TextAlignmentOptions.Center);
+            Stretch(applyText.rectTransform);
+            applyText.raycastTarget = false;
+            var applyRow = new Row { Rect = applyRect, Submit = ApplyDisplay };
+            _settingRows.Add(applyRow);
+            AddHover(_applyButton.gameObject, () => Select(_settingRows.IndexOf(applyRow)), ApplyDisplay);
+        }
+
+        private GameObject BuildPanel(Transform parent, string name, Vector2 size, string title)
+        {
+            var panel = NewImage(name, parent, _roundFill, PanelColor);
+            panel.type = Image.Type.Sliced;
+            panel.pixelsPerUnitMultiplier = 0.6f;
+            var rect = panel.rectTransform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = size;
+
+            var edge = NewImage("Edge", rect, _roundEdge, EdgeColor);
+            edge.type = Image.Type.Sliced;
+            edge.pixelsPerUnitMultiplier = 0.6f;
+            edge.raycastTarget = false;
+            Stretch(edge.rectTransform);
+
+            var titleText = NewText("Title", rect, title, 30f, EdgeColor, TextAlignmentOptions.TopLeft);
+            titleText.rectTransform.anchorMin = titleText.rectTransform.anchorMax = new Vector2(0f, 1f);
+            titleText.rectTransform.pivot = new Vector2(0f, 1f);
+            titleText.rectTransform.anchoredPosition = new Vector2(44f, -30f);
+            titleText.rectTransform.sizeDelta = new Vector2(400f, 50f);
+            titleText.raycastTarget = false;
+            return panel.gameObject;
+        }
+
+        private Row NewRow(Transform panel, int index, Vector2 size, float y, List<Row> list, bool clickSubmits)
+        {
+            var go = new GameObject($"Row{index}", typeof(RectTransform));
+            var rect = (RectTransform)go.transform;
+            rect.SetParent(panel, false);
+            rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = new Vector2(0f, y);
+            rect.sizeDelta = size;
+
+            // 마우스가 올라가는 영역은 줄 전체. 선택되지 않았을 때는 투명이라 안 보인다
+            var hit = go.AddComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f);
+
+            var highlight = NewImage("Highlight", rect, _roundFill, RowColor);
+            highlight.type = Image.Type.Sliced;
+            highlight.pixelsPerUnitMultiplier = 1f;
+            highlight.raycastTarget = false;
+            Stretch(highlight.rectTransform);
+
+            var row = new Row { Rect = rect, Highlight = highlight };
+            list.Add(row);
+            // 설정 줄은 빈 곳을 눌러도 적용되면 헷갈리니, 클릭은 1단 메뉴 줄에서만 실행으로 받는다
+            AddHover(go, () => Select(list.IndexOf(row)), clickSubmits ? () => row.Submit?.Invoke() : (Action)(() => Select(list.IndexOf(row))));
+            return row;
+        }
+
+        // ---------------- 작은 부품 ----------------
+
+        // 가로 막대 + 채움 + 손잡이 + 숫자. 막대를 누르거나 끌면 그 자리 값으로 바뀐다
+        private sealed class VolumeSlider
+        {
+            private const float Width = 400f;
+            private readonly RectTransform _fill;
+            private readonly Image _fillImage;
+            private readonly RectTransform _knob;
+            private readonly TextMeshProUGUI _value;
+
+            public VolumeSlider(PauseMenu menu, RectTransform row, Action<float> onDrag)
+            {
+                var track = NewImage("Track", row, menu._roundFill, TrackColor);
+                track.type = Image.Type.Sliced;
+                track.pixelsPerUnitMultiplier = 4f;
+                Place(track.rectTransform, new Vector2(400f, 0f), new Vector2(Width, 8f));
+                track.raycastTarget = false;
+
+                _fillImage = NewImage("Fill", track.rectTransform, menu._roundFill, EdgeColor);
+                _fillImage.type = Image.Type.Sliced;
+                _fillImage.pixelsPerUnitMultiplier = 4f;
+                _fillImage.raycastTarget = false;
+                _fill = _fillImage.rectTransform;
+                _fill.anchorMin = new Vector2(0f, 0f);
+                _fill.anchorMax = new Vector2(0f, 1f);
+                _fill.pivot = new Vector2(0f, 0.5f);
+                _fill.anchoredPosition = Vector2.zero;
+
+                var knob = NewImage("Knob", track.rectTransform, menu._circle, KnobColor);
+                knob.raycastTarget = false;
+                _knob = knob.rectTransform;
+                _knob.anchorMin = _knob.anchorMax = new Vector2(0f, 0.5f);
+                _knob.pivot = new Vector2(0.5f, 0.5f);
+                _knob.sizeDelta = new Vector2(34f, 34f);
+
+                _value = menu.NewText("Value", row, "", 36f, TextColor, TextAlignmentOptions.MidlineLeft);
+                Place(_value.rectTransform, new Vector2(830f, 0f), new Vector2(100f, 70f));
+                _value.raycastTarget = false;
+
+                // 손잡이가 작아서 잡기 쉽게 막대보다 위아래로 넉넉한 투명 영역을 둔다
+                var hit = NewImage("Hit", row, null, new Color(0f, 0f, 0f, 0f));
+                Place(hit.rectTransform, new Vector2(384f, 0f), new Vector2(Width + 32f, 60f));
+                var drag = hit.gameObject.AddComponent<DragArea>();
+                drag.OnValue = screen =>
+                {
+                    RectTransformUtility.ScreenPointToLocalPointInRectangle(track.rectTransform, screen, null, out var local);
+                    onDrag(Mathf.Clamp01((local.x + Width * 0.5f) / Width));
+                };
+            }
+
+            public void Refresh(float value, bool selected)
+            {
+                _fill.sizeDelta = new Vector2(Width * value, 0f);
+                _fillImage.color = selected ? AccentColor : EdgeColor;
+                _knob.anchoredPosition = new Vector2(Width * value, 0f);
+                _value.text = Mathf.RoundToInt(value * 100f).ToString();
+            }
+        }
+
+        // 전체화면 / 창모드 버튼. 고른 쪽은 꽉 찬 색, 아닌 쪽은 테두리만
+        private sealed class ModeButton
+        {
+            private readonly Image _fill;
+            private readonly TextMeshProUGUI _text;
+
+            public ModeButton(PauseMenu menu, RectTransform row, string label, Vector2 pos, Action onClick)
+            {
+                _fill = NewImage(label, row, menu._roundFill, EdgeColor);
+                _fill.type = Image.Type.Sliced;
+                _fill.pixelsPerUnitMultiplier = 1.4f;
+                Place(_fill.rectTransform, pos, new Vector2(220f, 64f));
+
+                var edge = NewImage("Edge", _fill.rectTransform, menu._roundEdge, EdgeColor);
+                edge.type = Image.Type.Sliced;
+                edge.pixelsPerUnitMultiplier = 1.4f;
+                edge.raycastTarget = false;
+                Stretch(edge.rectTransform);
+
+                _text = menu.NewText("Text", _fill.rectTransform, label, 34f, PanelColor, TextAlignmentOptions.Center);
+                Stretch(_text.rectTransform);
+                _text.raycastTarget = false;
+                AddClick(_fill.gameObject, () => { menu.Select(2); onClick(); });
+            }
+
+            public void Refresh(bool on)
+            {
+                _fill.color = on ? EdgeColor : new Color(0f, 0f, 0f, 0f);
+                _text.color = on ? PanelColor : EdgeColor;
+            }
+        }
+
+        private sealed class PointerArea : MonoBehaviour, IPointerEnterHandler, IPointerClickHandler
+        {
+            public Action Enter;
+            public Action Click;
+            public void OnPointerEnter(PointerEventData e) => Enter?.Invoke();
+            public void OnPointerClick(PointerEventData e) { if (e.button == PointerEventData.InputButton.Left) Click?.Invoke(); }
+        }
+
+        private sealed class DragArea : MonoBehaviour, IPointerDownHandler, IDragHandler
+        {
+            public Action<Vector2> OnValue;
+            public void OnPointerDown(PointerEventData e) => OnValue?.Invoke(e.position);
+            public void OnDrag(PointerEventData e) => OnValue?.Invoke(e.position);
+        }
+
+        private static void AddHover(GameObject go, Action enter, Action click)
+        {
+            var area = go.AddComponent<PointerArea>();
+            area.Enter = enter;
+            area.Click = click;
+        }
+
+        private static void AddClick(GameObject go, Action click) => AddHover(go, null, click);
+
+        // ---------------- 도우미 ----------------
+
+        private TextMeshProUGUI NewText(string name, Transform parent, string text, float size, Color color, TextAlignmentOptions align)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var t = go.AddComponent<TextMeshProUGUI>();
+            if (_font != null) t.font = _font;
+            t.text = text;
+            t.fontSize = size;
+            t.color = color;
+            t.alignment = align;
+            t.textWrappingMode = TextWrappingModes.NoWrap;
+            return t;
+        }
+
+        private static Image NewImage(string name, Transform parent, Sprite sprite, Color color)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var image = go.AddComponent<Image>();
+            image.sprite = sprite;
+            image.color = color;
+            return image;
+        }
+
+        // 줄 왼쪽 끝에서 x만큼 떨어진 곳에, 세로 가운데 맞춰 놓는다
+        private static void Place(RectTransform rect, Vector2 leftOffset, Vector2 size)
+        {
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = leftOffset;
+            rect.sizeDelta = size;
+        }
+
+        private static void Stretch(RectTransform rect)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = rect.offsetMax = Vector2.zero;
+        }
+
+        // 기획서와 같은 D2Coding을 쓰고 싶지만 Resources에 없어서, 이미 불러와진 게 있으면 쓰고 없으면 TMP 기본 글꼴(한글 됨)을 쓴다
+        private static TMP_FontAsset FindFont()
+        {
+            foreach (var font in Resources.FindObjectsOfTypeAll<TMP_FontAsset>())
+            {
+                if (font != null && font.name.Contains("D2Coding")) return font;
+            }
+            return TMP_Settings.defaultFontAsset;
+        }
+
+        // 자동 분할된 PlayerCat 시트의 0, 1번(가만히 있기) 칸을 커서로 쓴다
+        private static Sprite[] LoadCatFrames()
+        {
+            var all = Resources.LoadAll<Sprite>(CatSheet);
+            var frames = new List<Sprite>();
+            foreach (string n in new[] { $"{CatSheet}_0", $"{CatSheet}_1" })
+            {
+                foreach (var s in all) if (s.name == n) { frames.Add(s); break; }
+            }
+            if (frames.Count == 0 && all.Length > 0) frames.Add(all[0]);
+            return frames.ToArray();
+        }
+
+        // 둥근 사각형(또는 원) 스프라이트를 코드로 만든다. thickness가 0이면 꽉 찬 모양, 아니면 그 두께의 테두리만
+        private static Sprite MakeRoundSprite(int size, int radius, int thickness)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp,
+                hideFlags = HideFlags.HideAndDontSave
+            };
+            var pixels = new Color32[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float d = RoundRectDistance(x + 0.5f, y + 0.5f, size, radius);
+                    float outer = Mathf.Clamp01(0.5f - d);
+                    float a = thickness > 0 ? outer * Mathf.Clamp01(d + thickness + 0.5f) : outer;
+                    pixels[y * size + x] = new Color32(255, 255, 255, (byte)(a * 255f));
+                }
+            }
+            tex.SetPixels32(pixels);
+            tex.Apply();
+            float border = Mathf.Min(radius, size / 2 - 1);
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0,
+                SpriteMeshType.FullRect, new Vector4(border, border, border, border));
+        }
+
+        // 둥근 사각형 가장자리까지의 거리. 안쪽은 음수
+        private static float RoundRectDistance(float x, float y, int size, int radius)
+        {
+            float half = size * 0.5f;
+            float qx = Mathf.Abs(x - half) - (half - radius);
+            float qy = Mathf.Abs(y - half) - (half - radius);
+            float outside = new Vector2(Mathf.Max(qx, 0f), Mathf.Max(qy, 0f)).magnitude;
+            return outside + Mathf.Min(Mathf.Max(qx, qy), 0f) - radius;
+        }
+
+        // 스테이지 씬에 EventSystem이 없으면 마우스가 안 먹으니, 그 씬에 하나 만들어 준다 (씬이 바뀌면 같이 사라짐)
+        private static void EnsureEventSystem()
+        {
+            if (EventSystem.current != null) return;
+            if (FindAnyObjectByType<EventSystem>() != null) return;
+            var go = new GameObject("EventSystem");
+            go.AddComponent<EventSystem>();
+            go.AddComponent<InputSystemUIInputModule>();
+            SceneManager.MoveGameObjectToScene(go, SceneManager.GetActiveScene());
+        }
+
+        private static Color Hex(int rgb) =>
+            new Color(((rgb >> 16) & 0xFF) / 255f, ((rgb >> 8) & 0xFF) / 255f, (rgb & 0xFF) / 255f, 1f);
+    }
+}
