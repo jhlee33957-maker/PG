@@ -209,6 +209,8 @@ namespace CoffeeSpec.Rules.Entities
             _physics.Motor.ApplyNoFriction();
             // 빠르게 떨어지면 한 프레임 사이에 타일 속으로 들어갔다가 천천히 밀려 나온다. 연속 충돌 검사로 착지 순간에 막는다
             _rigidbody.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            // 걷기·날기 애니메이션은 지금 모습의 시트를 보고 고른다. 시트가 없는 모습은 그냥 둔다
+            if (GetComponent<EntitySpriteAnimator>() == null) gameObject.AddComponent<EntitySpriteAnimator>();
         }
 
         private bool _warnedMissingManager;
