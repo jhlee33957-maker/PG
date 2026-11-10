@@ -140,6 +140,7 @@ namespace CoffeeSpec.Core
                 _body.simulated = false;
             }
 
+            CatSfx.PlayClearAll();
             StartCoroutine(Run(start, walkTarget, frameCenter, walkTime, cat, flap, walk));
 
             float total = walkTime;

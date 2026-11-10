@@ -152,6 +152,7 @@ namespace CoffeeSpec.Player
             {
                 v.y = _jumpSpeed;
                 _jumpActive = true;
+                CoffeeSpec.Core.CatSfx.PlayJump(_renderer);
                 // 점프 직후에 바닥으로 다시 끌어당기지 않게 한다
                 _ruleEntity.BlockGroundSnap(0.15f);
                 _jumpBufferTimer = 0f;
