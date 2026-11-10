@@ -1,0 +1,274 @@
+fileFormatVersion: 2
+guid: 11a913a73da63794e8f460b688c41031
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -3009295066787047950
+    second: BG_City_Stage4_Glow_0
+  - first:
+      213: -261138058073230186
+    second: BG_City_Stage4_Glow_1
+  - first:
+      213: 8941029487789271528
+    second: BG_City_Stage4_Glow_2
+  - first:
+      213: -6151120265631813495
+    second: BG_City_Stage4_Glow_3
+  - first:
+      213: 6714251737954741647
+    second: BG_City_Stage4_Glow_4
+  - first:
+      213: -3074965177448014450
+    second: BG_City_Stage4_Glow_5
+  - first:
+      213: 425457130364469871
+    second: BG_City_Stage4_Glow_6
+  - first:
+      213: -5990032896176145705
+    second: BG_City_Stage4_Glow_7
+  - first:
+      213: 6225287588177868945
+    second: BG_City_Stage4_Glow_8
+  - first:
+      213: 1862295283661283089
+    second: BG_City_Stage4_Glow_9
+  - first:
+      213: -2200560659589608937
+    second: BG_City_Stage4_Glow_10
+  - first:
+      213: 4534781226250552392
+    second: BG_City_Stage4_Glow_11
+  - first:
+      213: -4185117735900292381
+    second: BG_City_Stage4_Glow_12
+  - first:
+      213: -2610278525686050658
+    second: BG_City_Stage4_Glow_13
+  - first:
+      213: -6515278822038399132
+    second: BG_City_Stage4_Glow_14
+  - first:
+      213: -2580711028436659702
+    second: BG_City_Stage4_Glow_15
+  - first:
+      213: -8780412777820867801
+    second: BG_City_Stage4_Glow_16
+  - first:
+      213: -7939331662357005593
+    second: BG_City_Stage4_Glow_17
+  - first:
+      213: 8935836713907596865
+    second: BG_City_Stage4_Glow_18
+  - first:
+      213: 6541992084014191699
+    second: BG_City_Stage4_Glow_19
+  - first:
+      213: -2663473759471639100
+    second: BG_City_Stage4_Glow_20
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 0
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 32
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: StarsA
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 419
+        width: 676
+        height: 179
+      alignment: 9
+      pivot: {x: 0.50443786, y: -0.575419}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 36c380f4c1f1b294d9516acb5ee133f6
+      internalID: -2103072449
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: StarsB
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 253
+        width: 621
+        height: 164
+      alignment: 9
+      pivot: {x: 0.49114332, y: -0.75}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 7710847c343b58642b998b08a74c16fb
+      internalID: 27947944
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: StarsC
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 103
+        width: 671
+        height: 148
+      alignment: 9
+      pivot: {x: 0.5022355, y: -0.8783784}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: b6e51bd0698bc48418a8a7dac7f66908
+      internalID: 1650991272
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Moon
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 101
+        height: 101
+      alignment: 9
+      pivot: {x: 1.8019803, y: -1.6336634}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: db249b42034da6642b2118c9f5d6459d
+      internalID: -1091902172
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 89d2523919606b34fb7cd2191d2b4e23
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Moon: -1091902172
+      StarsA: -2103072449
+      StarsB: 27947944
+      StarsC: 1650991272
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

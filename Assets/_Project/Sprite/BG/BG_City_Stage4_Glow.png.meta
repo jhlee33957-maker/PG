@@ -1,0 +1,415 @@
+fileFormatVersion: 2
+guid: 1a4a6a63aaf475a48835ae2cf05a3f38
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -2252417248888742784
+    second: BG_City_Stage5_Glow_0
+  - first:
+      213: 2441007749602389714
+    second: BG_City_Stage5_Glow_1
+  - first:
+      213: 4754883860626773518
+    second: BG_City_Stage5_Glow_2
+  - first:
+      213: 1456016222530547949
+    second: BG_City_Stage5_Glow_3
+  - first:
+      213: 5255865849413789092
+    second: BG_City_Stage5_Glow_4
+  - first:
+      213: 7144384840495909519
+    second: BG_City_Stage5_Glow_5
+  - first:
+      213: 5622486113127991020
+    second: BG_City_Stage5_Glow_6
+  - first:
+      213: -4140676228214270400
+    second: BG_City_Stage5_Glow_7
+  - first:
+      213: 7445193747386351840
+    second: BG_City_Stage5_Glow_8
+  - first:
+      213: 4430372382489803258
+    second: BG_City_Stage5_Glow_9
+  - first:
+      213: 289193017851737293
+    second: BG_City_Stage5_Glow_10
+  - first:
+      213: 4400990312218216267
+    second: BG_City_Stage5_Glow_11
+  - first:
+      213: -619625793310350804
+    second: BG_City_Stage5_Glow_12
+  - first:
+      213: -2871800586933502573
+    second: BG_City_Stage5_Glow_13
+  - first:
+      213: 6254792104454398755
+    second: BG_City_Stage5_Glow_14
+  - first:
+      213: -4256266666743515401
+    second: BG_City_Stage5_Glow_15
+  - first:
+      213: 695418198126982462
+    second: BG_City_Stage5_Glow_16
+  - first:
+      213: 1206427199915345449
+    second: BG_City_Stage5_Glow_17
+  - first:
+      213: 7279922549298484509
+    second: BG_City_Stage5_Glow_18
+  - first:
+      213: 6885229128070246261
+    second: BG_City_Stage5_Glow_19
+  - first:
+      213: 7987155208224040987
+    second: BG_City_Stage5_Glow_20
+  - first:
+      213: 4396609010931913090
+    second: BG_City_Stage5_Glow_21
+  - first:
+      213: -1309039791774608185
+    second: BG_City_Stage5_Glow_22
+  - first:
+      213: -8123534773820337614
+    second: BG_City_Stage5_Glow_23
+  - first:
+      213: 6252975712429698790
+    second: BG_City_Stage5_Glow_24
+  - first:
+      213: 3779677874105530476
+    second: BG_City_Stage5_Glow_25
+  - first:
+      213: 3668673756699467185
+    second: BG_City_Stage5_Glow_26
+  - first:
+      213: 3085409973250308221
+    second: BG_City_Stage5_Glow_27
+  - first:
+      213: 8589994772934290280
+    second: BG_City_Stage5_Glow_28
+  - first:
+      213: -4810763484317337106
+    second: BG_City_Stage5_Glow_29
+  - first:
+      213: -3714420534792963381
+    second: BG_City_Stage5_Glow_30
+  - first:
+      213: 7016439300528061838
+    second: BG_City_Stage5_Glow_31
+  - first:
+      213: 5609931413580519991
+    second: BG_City_Stage5_Glow_32
+  - first:
+      213: -5659461616451486797
+    second: BG_City_Stage5_Glow_33
+  - first:
+      213: -5556417287813040074
+    second: BG_City_Stage5_Glow_34
+  - first:
+      213: -2486454350982947798
+    second: BG_City_Stage5_Glow_35
+  - first:
+      213: 530411815791722689
+    second: BG_City_Stage5_Glow_36
+  - first:
+      213: 3713170608121553086
+    second: BG_City_Stage5_Glow_37
+  - first:
+      213: 1217685734848121057
+    second: BG_City_Stage5_Glow_38
+  - first:
+      213: -7768641964799486404
+    second: BG_City_Stage5_Glow_39
+  - first:
+      213: -6214889229025159970
+    second: BG_City_Stage5_Glow_40
+  - first:
+      213: -607087357557063743
+    second: BG_City_Stage5_Glow_41
+  - first:
+      213: 6465674876251564955
+    second: BG_City_Stage5_Glow_42
+  - first:
+      213: 3103964885084350226
+    second: BG_City_Stage5_Glow_43
+  - first:
+      213: 7375028675038060905
+    second: BG_City_Stage5_Glow_44
+  - first:
+      213: 7812831692625411272
+    second: BG_City_Stage5_Glow_45
+  - first:
+      213: -781898095943658943
+    second: BG_City_Stage5_Glow_46
+  - first:
+      213: 2151966496177157159
+    second: BG_City_Stage5_Glow_47
+  - first:
+      213: 2627287916908810465
+    second: BG_City_Stage5_Glow_48
+  - first:
+      213: -6496287101407629667
+    second: BG_City_Stage5_Glow_49
+  - first:
+      213: 9066336862043026286
+    second: BG_City_Stage5_Glow_50
+  - first:
+      213: 6344777738342815812
+    second: BG_City_Stage5_Glow_51
+  - first:
+      213: -632205991322798735
+    second: BG_City_Stage5_Glow_52
+  - first:
+      213: 1520062384048021821
+    second: BG_City_Stage5_Glow_53
+  - first:
+      213: 2717461979104072033
+    second: BG_City_Stage5_Glow_54
+  - first:
+      213: 7275342329987726419
+    second: BG_City_Stage5_Glow_55
+  - first:
+      213: 7732775513788620680
+    second: BG_City_Stage5_Glow_56
+  - first:
+      213: 1872861596147241890
+    second: BG_City_Stage5_Glow_57
+  - first:
+      213: 5055204416511288676
+    second: BG_City_Stage5_Glow_58
+  - first:
+      213: 1722671518162964388
+    second: BG_City_Stage5_Glow_59
+  - first:
+      213: -8364077364713115266
+    second: BG_City_Stage5_Glow_60
+  - first:
+      213: 4197614807191599233
+    second: BG_City_Stage5_Glow_61
+  - first:
+      213: -6625115548506794239
+    second: BG_City_Stage5_Glow_62
+  - first:
+      213: 8851698005655979636
+    second: BG_City_Stage5_Glow_63
+  - first:
+      213: 4310000749953953605
+    second: BG_City_Stage5_Glow_64
+  - first:
+      213: 4956859572899268585
+    second: BG_City_Stage5_Glow_65
+  - first:
+      213: 1930566204819260519
+    second: BG_City_Stage5_Glow_66
+  - first:
+      213: -2546618345689983107
+    second: BG_City_Stage5_Glow_67
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 32
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 0
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: StarsA
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 298
+        width: 1971
+        height: 97
+      alignment: 9
+      pivot: {x: 0.4967022, y: -0.4742268}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 12d65196d8cf40645a0d8a0d7a6fe0a4
+      internalID: -1003167514
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: StarsB
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 199
+        width: 1959
+        height: 97
+      alignment: 9
+      pivot: {x: 0.5007657, y: -0.48453608}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 76a973ef770a5cb4aab38911ee956120
+      internalID: -2110837104
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: StarsC
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 103
+        width: 1958
+        height: 94
+      alignment: 9
+      pivot: {x: 0.49489275, y: -0.5319149}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: 66a4a5f38a565434788986dafe89d9a7
+      internalID: 825311706
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Moon
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 101
+        height: 101
+      alignment: 9
+      pivot: {x: -4.4950495, y: -0.4059406}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: 0
+      bones: []
+      spriteID: f2940795eaad44d4b95cd3ee693dfbde
+      internalID: 450728412
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: f92d42da7cb6f094d8b1cc5cb34f5af9
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Moon: 450728412
+      StarsA: -1003167514
+      StarsB: -2110837104
+      StarsC: 825311706
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -131,7 +131,7 @@ namespace CoffeeSpec.Rules
         }
 
         // 마지막 글자에 받침이 있는지. 한글이 아니면 받침이 있는 것으로 보고 '이'를 붙인다
-        private static bool EndsWithFinalConsonant(string word)
+        public static bool EndsWithFinalConsonant(string word)
         {
             if (string.IsNullOrEmpty(word)) return false;
             char last = word[word.Length - 1];

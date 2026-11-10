@@ -14,27 +14,31 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Spec.StageSpec
   _sentenceCsv: {fileID: 4900000, guid: f5abd9c34845cae44a9ef8a798e4c23d, type: 3}
   _templateIds:
+  - ~NounIsNoun, !Pigeon !Move
+  - ~NounIsNoun, !Pigeon !Fly
+  - 
   - NounTouchNoun, !Spike !Die
+  - NounTouchNoun, !Monster !Die
   - 
-  - NounIsNoun, Pigeon !Fly
-  - NounIsNoun, Exit Move
+  - NounIfNounIsNoun, !Person !Tread !Exit
+  - NounIfNounNounIsNoun, !Button !Touch _ !Pigeon
   - 
-  - NounIfNounIsNoun, !Person Move Pigeon
-  - NounIfNounIsNoun, _ Die !Person
+  - NounIsNoun
   _wordPool:
-  - _value: Person
+  - _value: Button
+  - _value: Touch
+  - _value: Spike
   - _value: Pigeon
+  - _value: Pigeon
+  - _value: Pigeon
+  - _value: Fly
+  - _value: Move
   - _value: Spike
   - _value: Die
   - _value: Die
-  - _value: Fly
-  - _value: Pigeon
-  - _value: Pigeon
+  - _value: Monster
+  - _value: Monster
   - _value: Die
   - _value: Person
-  - _value: Move
-  - _value: Pigeon
+  - _value: Tread
   - _value: Exit
-  - _value: Fly
-  - _value: Person
-  - _value: Move

@@ -4,6 +4,7 @@ using CoffeeSpec.UI;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
+using UnityEngine.Rendering.Universal;
 
 namespace CoffeeSpec.Cameras
 {
@@ -39,7 +40,7 @@ namespace CoffeeSpec.Cameras
         [SerializeField, Min(0f)] private float _keyboardPanSpeed = 10f;
         [Tooltip("Shift를 누르고 있을 때 속도 배수")]
         [SerializeField, Min(1f)] private float _keyboardFastMultiplier = 2f;
-        [Tooltip("켜면 드래그로 레벨 밖까지 나가지 못하게 막는다")]
+        [Tooltip("켜면 카메라(따라가기·드래그·둘러보기 모두)가 레벨 가장자리 프리팹이 화면 끝에 닿는 곳까지만 움직인다")]
         [SerializeField] private bool _clampToLevel = true;
         [Tooltip("드래그 범위를 계산할 레벨 루트 오브젝트 이름")]
         [SerializeField] private string _levelRootName = "Level";
@@ -60,6 +61,8 @@ namespace CoffeeSpec.Cameras
         private Vector2 _lastMousePosition;
         private bool _hasPanBounds;
         private Bounds _panBounds;
+        private GameObject _boundsLevel;   // 범위를 잰 레벨 루트. 리트로 레벨이 새로 만들어지면 null이 되어 다시 잰다
+        private float _nextLevelSearchTime; // 레벨 루트가 없는 씬에서 매 프레임 Find하지 않게 한다
 
         private void Awake()
         {
@@ -103,7 +106,9 @@ namespace CoffeeSpec.Cameras
             float targetSize = _homeSize;
             if (showHome)
             {
-                target = _homePosition;
+                // 기획서 화면도 벽 바깥을 비추지 않게 배치한 자리를 레벨 범위 안으로 가둔다
+                EnsurePanBounds();
+                target = ClampToPanBounds(_homePosition);
                 smoothTime = _returnSmoothTime;
             }
             else
@@ -115,7 +120,10 @@ namespace CoffeeSpec.Cameras
                 }
                 _freeLooking = false;
                 target = new Vector3(group.center.x + _offset.x, group.center.y + _offset.y, _homePosition.z);
+                // 따라가기도 레벨 밖을 비추지 않게 목표 자리부터 가둔다
+                EnsurePanBounds();
                 targetSize = SizeToFit(group);
+                target = ClampToPanBounds(target);
                 // 조종 대상이 사라지면 이 자리에서 둘러보기를 시작한다
                 _lastFollowTarget = target;
                 _hasLastFollowTarget = true;
@@ -128,7 +136,17 @@ namespace CoffeeSpec.Cameras
             // 기획서가 열려 있으면 timeScale이 0이라 실제 시간으로 움직인다
             _smoothPosition = Vector3.SmoothDamp(_smoothPosition, target, ref _velocity,
                 smoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
+            // 줌 중에는 화면 크기가 바뀌므로 지금 크기 기준으로 한 번 더 가둔다. 기획서 화면으로 돌아가는 중에도 벽 바깥이 보이지 않게 한다
+            _smoothPosition = ClampToPanBounds(_smoothPosition);
             transform.position = SnapToPixel(_smoothPosition);
+        }
+
+        private void EnsurePanBounds()
+        {
+            if (_hasPanBounds && _boundsLevel != null) return;
+            if (Time.unscaledTime < _nextLevelSearchTime) return;
+            _nextLevelSearchTime = Time.unscaledTime + 1f;
+            RecalculatePanBounds();
         }
 
         // 조종할 수 있는 대상이 없으면(모두 죽었을 때 등) 방향키로 카메라를 움직여 맵을 둘러본다
@@ -144,13 +162,7 @@ namespace CoffeeSpec.Cameras
                 _freeLookMoved = false;
                 RecalculatePanBounds();
                 // 카메라는 살짝 늦게 따라가므로, 죽는 순간 멈추면 캐릭터가 화면 중앙이 아니다.
-                // 마지막으로 비추려던 자리까지는 이어서 가야 자연스럽고, 그 자리가 범위 밖이라고 튀지 않게 범위에 넣는다
-                if (_hasPanBounds && _hasLastFollowTarget)
-                {
-                    Vector2 half = GetHalfViewSize();
-                    _panBounds.Encapsulate(new Vector3(_lastFollowTarget.x - half.x, _lastFollowTarget.y - half.y, 0f));
-                    _panBounds.Encapsulate(new Vector3(_lastFollowTarget.x + half.x, _lastFollowTarget.y + half.y, 0f));
-                }
+                // 마지막으로 비추려던 자리까지는 이어서 간다. 그 자리는 따라가기 때 이미 범위 안으로 가둬 둔 곳이다
             }
 
             Vector3 pan = ReadKeyboardPan();
@@ -161,6 +173,7 @@ namespace CoffeeSpec.Cameras
                 // 키를 누르기 전까지는 원래 따라가던 방식 그대로 마지막 자리로 다가간다
                 _smoothPosition = Vector3.SmoothDamp(_smoothPosition, _lastFollowTarget, ref _velocity,
                     _followSmoothTime, Mathf.Infinity, Time.unscaledDeltaTime);
+                _smoothPosition = ClampToPanBounds(_smoothPosition);
             }
             else
             {
@@ -194,6 +207,12 @@ namespace CoffeeSpec.Cameras
             float halfHeight = group.extents.y + _groupPadding.y + Mathf.Abs(_offset.y);
             float halfWidth = group.extents.x + _groupPadding.x + Mathf.Abs(_offset.x);
             float size = Mathf.Max(_homeSize, halfHeight, halfWidth / Mathf.Max(0.01f, _camera.aspect));
+            // 레벨 전체가 다 보이는 크기보다 더 넓히면 레벨 밖만 더 보이므로 거기서 멈춘다 (원래 크기보다는 줄이지 않는다)
+            if (_hasPanBounds)
+            {
+                float fitLevel = Mathf.Max(_panBounds.extents.y, _panBounds.extents.x / Mathf.Max(0.01f, _camera.aspect));
+                size = Mathf.Min(size, Mathf.Max(_homeSize, fitLevel));
+            }
             return _maxOrthographicSize > 0f ? Mathf.Min(size, Mathf.Max(_homeSize, _maxOrthographicSize)) : size;
         }
 
@@ -262,7 +281,7 @@ namespace CoffeeSpec.Cameras
             return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
         }
 
-        /// <summary>레벨 아래 모든 렌더러를 감싸는 범위. 원래 화면이 레벨보다 넓으면 그 화면까지 포함한다.</summary>
+        /// <summary>레벨 아래 켜져 있는 모든 렌더러를 감싸는 범위. 네 방향 가장 바깥 프리팹의 끝이 곧 카메라가 비출 수 있는 끝이다.</summary>
         private void RecalculatePanBounds()
         {
             _hasPanBounds = false;
@@ -272,21 +291,22 @@ namespace CoffeeSpec.Cameras
             if (level == null) return;
 
             Renderer[] renderers = level.GetComponentsInChildren<Renderer>();
-            if (renderers.Length == 0) return;
-
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
+            bool any = false;
+            Bounds bounds = default;
+            foreach (var r in renderers)
             {
-                bounds.Encapsulate(renderers[i].bounds);
+                // 죽어서 꺼진 대상 등 안 보이는 것은 범위에 넣지 않는다
+                if (!r.enabled || !r.gameObject.activeInHierarchy) continue;
+                if (!any) { bounds = r.bounds; any = true; }
+                else bounds.Encapsulate(r.bounds);
             }
+            if (!any) return;
 
-            // 원래 위치에서 보이던 화면은 항상 갈 수 있게 해서, 드래그를 시작하자마자 화면이 튀지 않게 한다
-            Vector2 half = GetHalfViewSize();
-            bounds.Encapsulate(new Vector3(_homePosition.x - half.x, _homePosition.y - half.y, 0f));
-            bounds.Encapsulate(new Vector3(_homePosition.x + half.x, _homePosition.y + half.y, 0f));
-
+            // 예전에는 원래 카메라 화면까지 범위에 넣었지만, 그러면 레벨 밖이 보여서 뺐다.
+            // 레벨이 화면보다 좁은 축은 ClampToPanBounds가 레벨 가운데에 세운다
             _panBounds = bounds;
             _hasPanBounds = true;
+            _boundsLevel = level;
         }
 
         // 화면 가장자리가 범위를 넘지 않도록 카메라 중심을 가둔다. 범위가 화면보다 좁은 축은 가운데에 둔다
@@ -294,7 +314,9 @@ namespace CoffeeSpec.Cameras
         {
             if (!_hasPanBounds) return position;
 
+            // 픽셀 격자에 맞출 때 반 픽셀까지 바깥으로 밀릴 수 있어서 그만큼 안쪽으로 더 가둔다
             Vector2 half = GetHalfViewSize();
+            if (_pixelsPerUnit > 0) half += Vector2.one * (0.5f / _pixelsPerUnit);
             Vector3 min = _panBounds.min;
             Vector3 max = _panBounds.max;
 
@@ -309,9 +331,27 @@ namespace CoffeeSpec.Cameras
 
         private Vector2 GetHalfViewSize()
         {
+            // Pixel Perfect Camera가 있으면 렌더링 직전에 orthographicSize를 자기 계산값으로 덮어쓴다.
+            // 그래서 우리가 넣은 크기(_homeSize)로 가두면 실제 보이는 화면이 더 넓어 벽 바깥이 살짝 보였다. 실제 보이는 크기로 잰다
+            if (_pixelPerfect == null && !_searchedPixelPerfect)
+            {
+                _searchedPixelPerfect = true;
+                _pixelPerfect = GetComponent<PixelPerfectCamera>();
+            }
+            if (_pixelPerfect != null && _pixelPerfect.isActiveAndEnabled && _pixelPerfect.pixelRatio > 0)
+            {
+                float ppu = _pixelPerfect.assetsPPU;
+                float ratio = _pixelPerfect.pixelRatio;
+                float width = _pixelPerfect.cropFrameX ? _pixelPerfect.refResolutionX : _camera.pixelWidth / ratio;
+                float height = _pixelPerfect.cropFrameY ? _pixelPerfect.refResolutionY : _camera.pixelHeight / ratio;
+                return new Vector2(width / ppu * 0.5f, height / ppu * 0.5f);
+            }
             float halfHeight = _camera.orthographicSize;
             return new Vector2(halfHeight * _camera.aspect, halfHeight);
         }
+
+        private PixelPerfectCamera _pixelPerfect;
+        private bool _searchedPixelPerfect;
 
         // 카메라가 픽셀 사이에 서면 타일마다 반올림이 달라져서 화면 전체가 일렁인다. 픽셀 격자에 맞춰 세운다
         private Vector3 SnapToPixel(Vector3 position)

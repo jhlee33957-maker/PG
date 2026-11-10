@@ -15,7 +15,6 @@ namespace CoffeeSpec.Rules.Entities
         private bool _originalIsTrigger;
         private RigidbodyConstraints2D _originalConstraints;
         private RigidbodyType2D _originalBodyType;
-        private bool _originalRemovedByAttack;
 
         private readonly RuleEntity _owner;
         private readonly Rigidbody2D _rigidbody;
@@ -35,7 +34,6 @@ namespace CoffeeSpec.Rules.Entities
         internal Vector3 OriginalScale { get => _originalScale; set => _originalScale = value; }
         internal Vector2 OriginalSize { get => _originalSize; set => _originalSize = value; }
         internal SpriteDrawMode OriginalDrawMode { get => _originalDrawMode; set => _originalDrawMode = value; }
-        internal bool OriginalRemovedByAttack { get => _originalRemovedByAttack; set => _originalRemovedByAttack = value; }
         internal bool OriginalIsTrigger { get => _originalIsTrigger; set => _originalIsTrigger = value; }
         internal Sprite OriginalSprite { get => _originalSprite; set => _originalSprite = value; }
 
@@ -137,8 +135,6 @@ namespace CoffeeSpec.Rules.Entities
             _owner.Contacts.ApplyTrigger();
             _owner.BodyType = source.Appearance.OriginalBodyType;
             _owner.DefaultGravity = source.DefaultGravity;
-            // 공격에 사라지는 성질도 새 모습을 따라간다
-            _owner.RemovedByAttack = source.Appearance.OriginalRemovedByAttack;
             // 나는 중이거나 조종받는 중이면 중력과 회전 고정은 그 상태에 맞춰 두고, 끝날 때 새 설정으로 돌아간다
             _rigidbody.constraints = source.Appearance.OriginalConstraints;
             _owner.BaseFreezeRotation = (source.Appearance.OriginalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using CoffeeSpec.Rules;
 using UnityEngine;
 
@@ -19,6 +19,7 @@ namespace CoffeeSpec.Spec
     ///   - 문장 틀 Id, 단어 단어 : 쉼표 뒤에 빈칸 순서대로 처음 채워 둘 단어를 띄어 쓴다. 비워 둘 빈칸은 "_"
     ///                       (예: "NounIsNoun, Person _" → 첫 빈칸에 Person, 둘째 빈칸은 빈칸). 쉼표가 없으면 모두 빈칸
     ///                       단어 앞에 "!"를 붙이면 고정 단어: 플레이어가 옮길 수 없고 회색으로 보인다 (예: "NounIsNoun, !Person _")
+    ///                       문장 틀 Id 앞에 "~"를 붙이면 숨긴 문장: 기획서에는 안 보이지만 규칙은 그대로 적용된다 (예: "~NounIsNoun, Person Dead")
     ///   - "//" 로 시작 : 주석 줄. 코드 에디터의 주석처럼 그대로 보여 준다 (예: "// Object & Role Definition")
     ///   - 빈 칸        : 빈 줄
     /// 단어 묶음: WordId 목록. 모든 빈칸이 같이 쓰며, 어떤 빈칸에든 어떤 단어든 넣을 수 있다.
@@ -31,6 +32,8 @@ namespace CoffeeSpec.Spec
         public const char PresetSeparator = ',';
         public const string EmptyPresetToken = "_";
         public const char LockedPresetPrefix = '!';
+        /// <summary>문장 줄 맨 앞에 붙이면 숨긴 문장. 기획서에서만 안 보이고 게임에서는 규칙으로 적용된다.</summary>
+        public const char HiddenLinePrefix = '~';
         /// <summary>새로 만든 StageSpec에 기본으로 넣는 문장 틀 CSV 경로.</summary>
         public const string DefaultSentenceCsvPath = "Assets/_Project/Data/SentencesCSV.csv";
 
@@ -53,10 +56,13 @@ namespace CoffeeSpec.Spec
             public IReadOnlyList<WordId> Preset { get; }
             /// <summary>Preset과 같은 순서로, 그 단어를 고정했는지. 고정 단어는 플레이어가 옮길 수 없다.</summary>
             public IReadOnlyList<bool> Locked { get; }
+            /// <summary>숨긴 문장인지. 기획서에 그리지 않을 뿐 빈칸·단어·규칙은 보이는 문장과 똑같이 다룬다.</summary>
+            public bool Hidden { get; }
 
             public Line(LineKind kind, string comment, SentenceTemplate template,
-                        IReadOnlyList<WordId> preset = null, IReadOnlyList<bool> locked = null)
+                        IReadOnlyList<WordId> preset = null, IReadOnlyList<bool> locked = null, bool hidden = false)
             {
+                Hidden = hidden;
                 Kind = kind;
                 Comment = comment;
                 Template = template;
@@ -109,10 +115,10 @@ namespace CoffeeSpec.Spec
                 }
                 else
                 {
-                    SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out List<bool> locked);
+                    SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out List<bool> locked, out bool hidden);
                     if (templates.TryGetValue(templateId, out SentenceTemplate template))
                     {
-                        result.Add(new Line(LineKind.Sentence, null, template, preset, locked));
+                        result.Add(new Line(LineKind.Sentence, null, template, preset, locked, hidden));
                     }
                     else
                     {
@@ -126,12 +132,17 @@ namespace CoffeeSpec.Spec
         /// <summary>
         /// "NounIsNoun, Person _" 를 문장 틀 Id와 처음 단어 목록으로 나눈다.
         /// 쉼표가 없으면 단어 목록은 비어 있다 (모든 빈칸이 빈칸으로 시작). "_"는 빈 WordId.
-        /// 단어 앞의 "!"는 고정 표시라 떼어 내고 locked에 따로 담는다.
+        /// 단어 앞의 "!"는 고정 표시라 떼어 내고 locked에 따로 담는다. 맨 앞의 "~"는 숨김 표시라 떼어 내고 hidden에 담는다.
         /// </summary>
-        private static void SplitSentenceEntry(string entry, out string templateId, out List<WordId> preset, out List<bool> locked)
+        private static void SplitSentenceEntry(string entry, out string templateId, out List<WordId> preset, out List<bool> locked, out bool hidden)
         {
             preset = new List<WordId>();
             locked = new List<bool>();
+            hidden = entry.Length > 0 && entry[0] == HiddenLinePrefix;
+            if (hidden)
+            {
+                entry = entry.Substring(1).Trim();
+            }
             int comma = entry.IndexOf(PresetSeparator);
             if (comma < 0)
             {
@@ -185,13 +196,26 @@ namespace CoffeeSpec.Spec
                     continue;
                 }
 
-                SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out _);
+                SplitSentenceEntry(entry, out string templateId, out List<WordId> preset, out _, out bool hidden);
                 if (!templates.TryGetValue(templateId, out SentenceTemplate template))
                 {
                     Debug.LogWarning($"[StageSpec] '{name}': CSV에 없는 문장 틀 Id '{templateId}'", this);
                     continue;
                 }
                 blankCount += template.Pattern.Count;
+
+                // 숨긴 문장은 플레이어가 채울 수 없으므로 빈칸이 남으면 빌드를 못 하게 된다
+                if (hidden)
+                {
+                    for (int i = 0; i < template.Pattern.Count; i++)
+                    {
+                        if (i >= preset.Count || preset[i].IsEmpty)
+                        {
+                            Debug.LogWarning($"[StageSpec] '{name}': 숨긴 문장 '{entry}'에 빈칸이 있습니다. 플레이어가 채울 수 없어서 빌드할 수 없게 됩니다.", this);
+                            break;
+                        }
+                    }
+                }
 
                 if (preset.Count > template.Pattern.Count)
                 {

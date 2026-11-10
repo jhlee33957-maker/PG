@@ -21,10 +21,10 @@ namespace CoffeeSpec.Rules
     ///   조건 재료(태그, 상태)는 모두 이 매니저가 바꾸므로 매 프레임 확인하지 않고,
     ///   문장이나 대상이 바뀌어 다시 적용할 때만 결과가 더 안 바뀔 때까지 계산한다.
     ///   조건으로 생긴 변신도 다른 변신처럼 영구다.
-    /// - 사망: Die 문장과 플레이어 공격은 똑같이 대상을 사망 상태(숨김)로 만든다. 사망 상태는 계속 남아서
+    /// - 사망: Die 문장은 대상을 사망 상태(숨김)로 만든다. 사망 상태는 계속 남아서
     ///   "사망하면" 조건에 걸린다. 사망한 대상은 다른 조건과 효과는 받지 않지만, "사망하면" 조건으로 변신하면
-    ///   새 모습으로 다시 살아나고 사망 상태는 풀린다. 공격으로 죽으면 그 순간에만 규칙을 다시 적용한다.
-    /// - 플레이어 입력: 조종 대상을 좌우 이동·대쉬·점프·공격으로 움직이는 동안은 "움직이면" 조건에 걸린다
+    ///   새 모습으로 다시 살아나고 사망 상태는 풀린다.
+    /// - 플레이어 입력: 조종 대상을 좌우 이동·점프로 움직이는 동안은 "움직이면" 조건에 걸린다
     ///   (Move 이동은 켜지 않는다). 움직이기 시작할 때와 멈출 때만 규칙을 다시 적용한다.
     /// - 밟힘: 다른 대상이 머리 위에 올라서 있는 동안 "밟히면" 조건에 걸린다. 결과 쪽에 쓰면 효과가 없다.
     ///   출구처럼 통과되는 대상도 "밟히면" 문장의 주어인 동안은 부딪히는 몸이 된다 (부딪혀도 클리어는 된다).
@@ -854,25 +854,6 @@ namespace CoffeeSpec.Rules
 
         public void Unregister(RuleEntity entity) => _entities.Remove(entity);
 
-        /// <summary>공격으로 대상이 죽었다. Die 문장으로 죽은 것처럼 "사망하면" 조건을 다시 따진다.</summary>
-        public void NotifyDied(RuleEntity entity)
-        {
-            if (!_started) return;
-            // Remove로 조종이 풀린 뒤에도 직전 효과 할당으로 조종 대상의 사망을 놓치지 않는다.
-            bool controlled = entity != null && (entity.IsControlled || _effects.WillControl(entity));
-            // 사망은 접촉과 입력도 바꾸므로 조건 또는 닿음 문장이 하나라도 있으면 안전하게 재계산한다.
-            if (_conditionWords.Count > 0 || _touchSubjects.Count > 0)
-            {
-                if (_reapplying) _controlledDied |= controlled;
-                else _pendingControlledDeath |= controlled;
-                ReapplyAll();
-            }
-            else
-            {
-                _controlledDied |= controlled;
-                if (!_reapplying) CheckControlledDeath();
-            }
-        }
 
         /// <summary>변신 직후 잠금이 끝났다. 그동안 막힌 변신이 아직 해당되면 이번에 일어나도록 다시 적용한다.</summary>
         public void NotifyTransformLockEnded(RuleEntity entity)
@@ -927,7 +908,7 @@ namespace CoffeeSpec.Rules
             if (_started && _conditionWords.Contains(WordId.Move)) ReapplyAll();
         }
 
-        // 공격으로 사라진 대상은 규칙 효과를 받지 않는다. 변신 원본 찾기(FindOriginalEntity)에서는 그대로 쓴다
+        // 사망해 사라진 대상은 규칙 효과를 받지 않는다. 변신 원본 찾기(FindOriginalEntity)에서는 그대로 쓴다
         public EntitySelection GetEntities(WordId id) => new EntitySelection(_entities, id, false);
     }
 }
