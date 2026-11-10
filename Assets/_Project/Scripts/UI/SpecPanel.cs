@@ -481,6 +481,15 @@ namespace CoffeeSpec.UI
                     _optionToBlank[option] = blank;
                     _lockedBlanks[blank] = line.IsLocked(slot);
                 }
+
+                // 숨긴 문장은 화면에 없어서 플레이어가 건드릴 수 없다. 초기화(Reset) 때 단어가 빠지지 않도록 모두 고정으로 둔다
+                if (line.Hidden)
+                {
+                    for (int slot = 0; slot < slotCount; slot++)
+                    {
+                        _lockedBlanks[_blankOffsets[sentenceIndex] + slot] = true;
+                    }
+                }
                 sentenceIndex++;
             }
         }
@@ -1198,10 +1207,24 @@ namespace CoffeeSpec.UI
             _textBuilder.Clear();
             int sentenceIndex = 0;
             int currentLine = -1;
+            int visibleLine = -1; // 숨긴 문장을 뺀 화면상 줄 번호
 
             for (int l = 0; l < _lines.Count; l++)
             {
                 StageSpec.Line line = _lines[l];
+
+                // 숨긴 문장은 글자를 그리지 않는다. 빈칸 번호는 그대로 세야 규칙·단어 배치가 어긋나지 않는다
+                if (line.Kind == StageSpec.LineKind.Sentence && line.Hidden)
+                {
+                    sentenceIndex++;
+                    continue;
+                }
+
+                if (visibleLine >= 0)
+                {
+                    _textBuilder.Append('\n');
+                }
+                visibleLine++;
 
                 if (line.Kind == StageSpec.LineKind.Comment)
                 {
@@ -1211,19 +1234,14 @@ namespace CoffeeSpec.UI
                 {
                     if (AppendSentence(sentenceIndex))
                     {
-                        currentLine = l;
+                        currentLine = visibleLine;
                     }
                     sentenceIndex++;
-                }
-
-                if (l < _lines.Count - 1)
-                {
-                    _textBuilder.Append('\n');
                 }
             }
 
             _documentText.text = _textBuilder.ToString();
-            RenderLineNumbers(currentLine);
+            RenderLineNumbers(currentLine, visibleLine + 1);
             LayoutBlankBoxes();
         }
 
@@ -1342,14 +1360,14 @@ namespace CoffeeSpec.UI
             _textBuilder.Append("</color>");
         }
 
-        private void RenderLineNumbers(int currentLine)
+        private void RenderLineNumbers(int currentLine, int visibleLineCount)
         {
             if (_lineNumberText == null)
             {
                 return;
             }
 
-            int count = Mathf.Max(_minLineCount, _lines.Count);
+            int count = Mathf.Max(_minLineCount, visibleLineCount);
             var builder = new StringBuilder();
             for (int i = 0; i < count; i++)
             {

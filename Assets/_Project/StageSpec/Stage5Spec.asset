@@ -14,31 +14,32 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Spec.StageSpec
   _sentenceCsv: {fileID: 4900000, guid: f5abd9c34845cae44a9ef8a798e4c23d, type: 3}
   _templateIds:
-  - NounIsNoun, !Pigeon !Move
+  - "// QA\uAC00 \uD734\uAC00\uC37C\uB2E4 \uB108\uAC00 \uD14C\uC2A4\uD2B8\uB9CC \uC880 \uD574\uB194\uB77C"
+  - "// \uB108\uB97C \uC0AC\uB791\uD558\uB294 \uC0AC\uC218\uAC00"
+  - 
+  - NounIfNounIsNoun, !Pigeon !Tread !Wall
   - NounIsNoun, !Pigeon !Fly
+  - NounIsNoun, !Pigeon !Move
   - 
-  - NounTouchNoun, !Spike !Die
-  - NounTouchNoun, !Monster !Die
+  - NounIfNounNounIsNoun, !Button !Touch !Wall !Spike
+  - NounIfNounNounIsNoun, !Button !Tread !Monster !Exit
   - 
-  - NounIfNounIsNoun, !Person !Tread !Exit
-  - NounIfNounNounIsNoun, !Button !Touch _ !Pigeon
-  - 
-  - NounIsNoun
+  - NounTouchNoun, !Spike !Pigeon
   _wordPool:
+  - _value: Pigeon
+  - _value: Wall
+  - _value: Wall
+  - _value: Spike
+  - _value: Pigeon
+  - _value: Fly
+  - _value: Tread
+  - _value: Move
+  - _value: Pigeon
   - _value: Button
   - _value: Touch
   - _value: Spike
   - _value: Pigeon
-  - _value: Pigeon
-  - _value: Pigeon
-  - _value: Fly
-  - _value: Move
-  - _value: Spike
-  - _value: Die
-  - _value: Die
   - _value: Monster
-  - _value: Monster
-  - _value: Die
-  - _value: Person
+  - _value: Button
   - _value: Tread
   - _value: Exit

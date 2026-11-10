@@ -24,8 +24,6 @@ namespace CoffeeSpec.Rules.Entities
         [SerializeField, Min(0f)] private float _groundSnapDistance = 0.1f;
         [Tooltip("이보다 깊게 바닥에 박히면 바로 빼낸다. 너무 작으면 물리 엔진과 싸워 떨린다 (1/32 = 1픽셀)")]
         [SerializeField, Min(0.01f)] private float _sinkTolerance = 0.03f;
-        [Tooltip("켜면 플레이어 공격에 맞았을 때 사라진다(숨김). 다른 객체가 이 모습으로 변신하면 이 설정도 따라간다")]
-        [SerializeField] private bool _removedByAttack;
         [Tooltip("변신한 뒤 이 시간(초) 동안은 사망하지 않는다. 사망하면 다른 모습으로 살아난 직전에 닿아 있던 것에 바로 또 죽지 않게 한다")]
         [SerializeField, Min(0f)] private float _transformInvincibleTime = 0.2f;
         [Tooltip("변신한 뒤 이 시간(초) 동안은 다른 것으로 다시 변신하지 않는다. 연달아 걸리는 변신 문장 때문에 바로 또 바뀌는 것을 막는다")]
@@ -64,7 +62,6 @@ namespace CoffeeSpec.Rules.Entities
         internal float MoveSpeed => _moveSpeed;
         internal RigidbodyType2D BodyType { get => _bodyType; set => _bodyType = value; }
         internal Vector2 FlyHeightRange => _flyHeightRange;
-        internal bool RemovedByAttack { get => _removedByAttack; set => _removedByAttack = value; }
         internal RuleManager Manager
         {
             get
@@ -126,18 +123,18 @@ namespace CoffeeSpec.Rules.Entities
         public bool IsFlying => _physics != null && _physics.Fly.IsFlying;
         /// <summary>플레이어가 직접 조작 중이면 true. 이때는 Move 이동이 속도를 덮어쓰지 않는다.</summary>
         public bool InputOverride { get; set; }
-        /// <summary>조종받는 대상을 플레이어가 움직이는 중인지(이동·대쉬·점프·공격). 규칙의 "움직이면" 조건에 걸린다.</summary>
+        /// <summary>조종받는 대상을 플레이어가 움직이는 중인지(이동·점프). 규칙의 "움직이면" 조건에 걸린다.</summary>
         public bool IsInputMoving { get; private set; }
         /// <summary>문장으로 조종(Control)을 받아 플레이어가 조작하는 객체인지. 접촉 규칙(출구 등)에서 플레이어를 구분할 때 쓴다.</summary>
         public bool IsControlled => _controlled;
         /// <summary>지금 상태에서 써야 할 중력. 나는 중이면 0, 중력 없는 모습이 조종받으면 조종용 중력.</summary>
         public float Gravity => IsFlying ? 0f : (_controlled && _defaultGravity <= 0f ? _controlGravity : _defaultGravity);
         /// <summary>
-        /// 사망한(숨겨진) 상태. 공격과 Die 문장 모두 이 상태가 된다.
+        /// 사망한(숨겨진) 상태. Die 문장으로 이 상태가 된다.
         /// 규칙에서는 "사망하면" 조건에만 걸리고, 접촉에서는 빠진다. 변신 원본으로는 계속 쓰인다.
         /// </summary>
         public bool IsRemoved { get; private set; }
-        /// <summary>변신 직후 무적 시간 중인지. 이 동안은 Die 문장과 공격으로 죽지 않는다.</summary>
+        /// <summary>변신 직후 무적 시간 중인지. 이 동안은 Die 문장으로 죽지 않는다.</summary>
         public bool IsInvincible => Time.time < _invincibleUntil;
         private float _invincibleUntil = -1f;
         private Coroutine _invincibleRoutine;
@@ -200,7 +197,6 @@ namespace CoffeeSpec.Rules.Entities
             _baseFreezeRotation = (_appearance.OriginalConstraints & RigidbodyConstraints2D.FreezeRotation) != 0;
             _appearance.OriginalBodyType = _rigidbody.bodyType;
             _bodyType = _appearance.OriginalBodyType;
-            _appearance.OriginalRemovedByAttack = _removedByAttack;
 
             // 조종은 문장으로만 받는다. 프리팹에 조작 스크립트가 남아 있어도 문장이 줄 때까지 꺼 둔다
             _player = GetComponent<PlatformerPlayer>();
@@ -316,21 +312,9 @@ namespace CoffeeSpec.Rules.Entities
             ApplyBodyType();
         }
 
-        /// <summary>
-        /// 플레이어 공격에 맞았다. 공격으로 사라지는 대상이면 숨기고 true를 돌려준다.
-        /// 지우지 않고 숨기기만 해서 변신 원본(원래 모습)으로는 계속 쓸 수 있다. 리트·빌드 때 레벨을 다시 깔면 돌아온다.
-        /// </summary>
-        public bool TryRemoveByAttack()
-        {
-            if (!_removedByAttack || IsRemoved || IsControlled || IsInvincible) return false;
-            Remove();
-            // Die 문장으로 죽은 것과 똑같이 "사망하면" 조건을 다시 따지게 알린다 (죽는 순간에만 한 번)
-            Manager?.NotifyDied(this);
-            return true;
-        }
 
         /// <summary>
-        /// 화면에서 숨기고 충돌·물리를 꺼서 더 이상 상호작용하지 않게 한다. 공격과 Die 문장이 같이 쓴다.
+        /// 화면에서 숨기고 충돌·물리를 꺼서 더 이상 상호작용하지 않게 한다. Die 문장이 쓴다.
         /// 지우지 않으므로 변신 원본으로는 계속 쓸 수 있고, 레벨을 다시 깔면 돌아온다.
         /// </summary>
         public void Remove()

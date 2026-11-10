@@ -13,6 +13,7 @@ namespace CoffeeSpec.EditorTools
     /// 처음 단어는 그 빈칸 품사에 맞고 Word Pool에 있는 단어만 보여 주고,
     /// Word Pool 개수만큼 이미 다른 줄에서 쓰고 있으면 회색(선택 불가)으로 보여 준다.
     /// 처음 단어 왼쪽 체크박스는 고정 표시: 체크하면 플레이어가 그 단어를 옮길 수 없다. 빈칸이면 체크할 수 없다.
+    /// 문장 틀 왼쪽 체크박스는 숨김 표시: 체크하면 기획서에 안 보이지만 게임에서는 규칙으로 적용된다. 문장 틀 Id 앞에 "~"가 붙는다.
     /// 저장은 기존 글자 형식("NounIsNoun, !Person _", "// 주석", "")으로 한다. 고정 단어는 앞에 "!"가 붙는다.
     /// </summary>
     [CustomPropertyDrawer(typeof(StageSpecLineAttribute))]
@@ -24,6 +25,7 @@ namespace CoffeeSpec.EditorTools
         private const string BlankLabel = "(빈칸)";
         private const float LockToggleWidth = 18f;
         private static readonly GUIContent LockToggleContent = new GUIContent("", "고정: 체크하면 플레이어가 이 단어를 옮길 수 없고 회색으로 보인다");
+        private static readonly GUIContent HideToggleContent = new GUIContent("", "숨김: 체크하면 기획서에 이 문장이 안 보인다. 게임에서는 규칙으로 그대로 적용된다");
 
         private static readonly string[] KindNames = { "문장", "주석", "빈 줄" };
 
@@ -39,6 +41,7 @@ namespace CoffeeSpec.EditorTools
             public string TemplateId;
             public List<WordId> Preset;
             public List<bool> Locked; // Preset과 같은 순서로 고정 여부
+            public bool Hidden;       // 기획서에서 숨긴 문장인지
         }
 
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
@@ -126,7 +129,22 @@ namespace CoffeeSpec.EditorTools
                 ids.Insert(0, parsed.TemplateId ?? "");
                 current = 0;
             }
-            int next = EditorGUI.Popup(rect, "문장 틀", current, names.ToArray());
+            // 숨김 체크박스는 아래 빈칸들의 고정 체크박스와 같은 줄(열)에 둔다
+            var fieldRect = EditorGUI.PrefixLabel(rect, new GUIContent("문장 틀"));
+            var hideRect = new Rect(fieldRect.x, fieldRect.y, LockToggleWidth, fieldRect.height);
+            var popupRect = new Rect(fieldRect.x + LockToggleWidth + 2f, fieldRect.y,
+                                     Mathf.Max(0f, fieldRect.width - LockToggleWidth - 2f), fieldRect.height);
+            int indent = EditorGUI.indentLevel;
+            EditorGUI.indentLevel = 0;
+            bool nextHidden = EditorGUI.Toggle(hideRect, HideToggleContent, parsed.Hidden);
+            int next = EditorGUI.Popup(popupRect, current, names.ToArray());
+            EditorGUI.indentLevel = indent;
+            if (nextHidden != parsed.Hidden)
+            {
+                parsed.Hidden = nextHidden;
+                property.stringValue = Serialize(parsed);
+                return;
+            }
             if (next != current)
             {
                 parsed.TemplateId = ids[next];
@@ -154,7 +172,7 @@ namespace CoffeeSpec.EditorTools
             // 미리보기
             rect.y += Line + Space;
             using (new EditorGUI.DisabledScope(true))
-                EditorGUI.TextField(rect, "미리보기", Preview(template, parsed.Preset));
+                EditorGUI.TextField(rect, parsed.Hidden ? "미리보기 (숨김)" : "미리보기", Preview(template, parsed.Preset));
         }
 
         private void DrawSlot(Rect rect, SerializedProperty property, Parsed parsed, SentenceTemplate template, int slot,
@@ -251,6 +269,11 @@ namespace CoffeeSpec.EditorTools
             }
 
             p.Kind = StageSpec.LineKind.Sentence;
+            if (entry[0] == StageSpec.HiddenLinePrefix)
+            {
+                p.Hidden = true;
+                entry = entry.Substring(1).Trim();
+            }
             int comma = entry.IndexOf(StageSpec.PresetSeparator);
             if (comma < 0)
             {
@@ -278,7 +301,7 @@ namespace CoffeeSpec.EditorTools
                     return string.IsNullOrEmpty(p.Comment) ? StageSpec.CommentPrefix : $"{StageSpec.CommentPrefix} {p.Comment}";
             }
 
-            string id = p.TemplateId ?? "";
+            string id = (p.Hidden ? StageSpec.HiddenLinePrefix.ToString() : "") + (p.TemplateId ?? "");
             // 처음 단어가 하나도 없으면 Id만 저장한다 (모두 빈칸)
             bool any = false;
             foreach (var w in p.Preset) if (!w.IsEmpty) { any = true; break; }

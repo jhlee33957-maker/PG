@@ -15,6 +15,7 @@ namespace CoffeeSpec.Rules
         /// 활용형 빈칸은 단어의 표시 이름 대신 WordsCSV에서 그 이름의 열에 적힌 말을 보여준다 (예: 난다 → 날면).
         /// 끝말은 그 번호 빈칸에 들어간 단어의 품사에 맞는 말만 붙고, 맞는 품사가 없으면 아무것도 붙지 않는다.
         /// 여러 품사는 {1:Noun=이다,Verb=...}처럼 쉼표로 적는다.
+        /// 끝말 맨 앞의 이(가)·은(는)·을(를)·과(와)는 앞 단어 받침에 맞춰 한쪽만 남는다 ({1:Noun=이(가) 된다}).
         /// </summary>
         public static readonly Regex TokenPattern = new(@"\{(\d+)(?:@([A-Za-z]\w*))?(?::([^}]*))?\}", RegexOptions.Compiled);
 
@@ -66,9 +67,33 @@ namespace CoffeeSpec.Rules
                 int eq = part.IndexOf('=');
                 if (eq < 0) continue;
                 if (System.Enum.TryParse(part.Substring(0, eq).Trim(), true, out WordType t) && t == type)
-                    return part.Substring(eq + 1);
+                    return AttachJosa(part.Substring(eq + 1), WordTags.DisplayName(word));
             }
             return string.Empty;
+        }
+
+        // 받침 있을 때 / 없을 때 조사 쌍. 끝말 맨 앞에 "이(가)"처럼 적으면 앞 단어에 맞는 쪽 하나로 바꾼다
+        private static readonly (string marker, string withFinal, string withoutFinal)[] JosaPairs =
+        {
+            ("이(가)", "이", "가"),
+            ("은(는)", "은", "는"),
+            ("을(를)", "을", "를"),
+            ("과(와)", "과", "와"),
+        };
+
+        /// <summary>
+        /// 끝말이 조사 표시("이(가) 된다")로 시작하면 앞 단어의 받침을 보고 한쪽만 남긴다 (사람이 된다, 비둘기가 된다).
+        /// 끝말은 항상 그 빈칸 단어 바로 뒤에 붙으므로 그 단어의 표시 이름만 보면 된다.
+        /// </summary>
+        private static string AttachJosa(string ending, string precedingWord)
+        {
+            foreach (var (marker, withFinal, withoutFinal) in JosaPairs)
+            {
+                if (!ending.StartsWith(marker, System.StringComparison.Ordinal)) continue;
+                string josa = WordTags.EndsWithFinalConsonant(precedingWord) ? withFinal : withoutFinal;
+                return josa + ending.Substring(marker.Length);
+            }
+            return ending;
         }
 
         /// <summary>CSV(Id,Text,Pattern)를 읽는다. Pattern은 빈칸을 |로, 한 빈칸의 여러 품사를 /로 구분한다 (예: Noun|Noun/Verb).</summary>
