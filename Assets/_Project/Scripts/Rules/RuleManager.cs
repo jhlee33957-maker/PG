@@ -127,6 +127,8 @@ namespace CoffeeSpec.Rules
         private readonly List<(RuleEntity target, WordId word)> _pendingTouch = new();
         // 이번 적용(ReapplyOnce) 동안 만지면으로 받은 동사 효과. 변신으로 계산을 처음부터 다시 해도 닿은 순간의 결과가 남게 한다
         private readonly List<(RuleEntity target, WordId word)> _latchedTouch = new();
+        // 한쪽만 Exit가 온 쌍. 상대 목록은 그대로 두고, 만지면 판정에서만 이미 떨어진 것으로 본다
+        private readonly HashSet<(RuleEntity, RuleEntity)> _endedTouchPairs = new();
         private readonly HashSet<WordId> _conditionWords = new();
         private readonly HashSet<WordId> _touchSubjects = new();
         private static readonly WordId TreadCondition = new WordId("Tread");
@@ -403,6 +405,7 @@ namespace CoffeeSpec.Rules
             {
                 _reapplying = false;
                 _reapplyQueued = false;
+                _endedTouchPairs.Clear();
             }
             // 사망하면 문장으로 되살아나 조종을 받을 수도 있으니 적용이 다 끝난 뒤에 따진다
             CheckControlledDeath();
@@ -641,6 +644,7 @@ namespace CoffeeSpec.Rules
                 {
                     // 벽은 맵 어디에나 붙어 있어서 닿은 것으로 치면 걷기만 해도 조건이 걸린다. 만지면 대상에서 뺀다
                     if (t.IsRemoved || t.Id == TouchIgnoredId) continue;
+                    if (_endedTouchPairs.Contains((e, t))) continue;
                     _pendingTouch.Add((t, word));
                 }
             }
@@ -867,12 +871,26 @@ namespace CoffeeSpec.Rules
 
         /// <summary>
         /// 닿은 콜라이더가 늘거나 줄었다. touchedChanged는 '닿아 있음'이 바뀌었는지.
-        /// '만지면' 조건이 바뀌었거나, 이 대상이 닿으면 바꾸는 문장의 첫 칸일 때만 다시 따진다.
+        /// '만지면' 조건이 바뀌었거나, 이 대상이나 상대가 닿으면 바꾸는 문장의 첫 칸일 때 다시 따진다.
+        /// 닿음 이벤트는 한쪽에만 올 수 있어서, 주어(가시) 쪽 Exit가 없어도 날기 같은 지속 효과가 떨어질 때 풀리게 한다.
         /// </summary>
-        public void NotifyTouchChanged(RuleEntity entity, bool touchedChanged)
+        public void NotifyTouchChanged(RuleEntity entity, bool touchedChanged, RuleEntity other = null, bool ended = false)
         {
             if (!_started) return;
-            if ((touchedChanged && _usesTouchCondition) || _touchSubjects.Contains(entity.Id)) ReapplyAll();
+            if (ended && entity != null && other != null && _touchSubjects.Count > 0
+                && (_touchSubjects.Contains(entity.Id) || _touchSubjects.Contains(other.Id)))
+            {
+                _endedTouchPairs.Add((entity, other));
+                _endedTouchPairs.Add((other, entity));
+            }
+            if (touchedChanged && _usesTouchCondition)
+            {
+                ReapplyAll();
+                return;
+            }
+            if (_touchSubjects.Count == 0) return;
+            if (entity != null && _touchSubjects.Contains(entity.Id)) ReapplyAll();
+            else if (other != null && _touchSubjects.Contains(other.Id)) ReapplyAll();
         }
 
         // 문장 목록이 바뀔 때만 의존성을 모은다. 입력과 접촉 이벤트에서는 집합만 조회한다.
