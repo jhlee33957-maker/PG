@@ -26,6 +26,10 @@ namespace CoffeeSpec.Rules.Entities
         [SerializeField, Min(0.01f)] private float _sinkTolerance = 0.03f;
         [Tooltip("켜면 플레이어 공격에 맞았을 때 사라진다(숨김). 다른 객체가 이 모습으로 변신하면 이 설정도 따라간다")]
         [SerializeField] private bool _removedByAttack;
+        [Tooltip("변신한 뒤 이 시간(초) 동안은 사망하지 않는다. 사망하면 다른 모습으로 살아난 직전에 닿아 있던 것에 바로 또 죽지 않게 한다")]
+        [SerializeField, Min(0f)] private float _transformInvincibleTime = 0.2f;
+        [Tooltip("변신한 뒤 이 시간(초) 동안은 다른 것으로 다시 변신하지 않는다. 연달아 걸리는 변신 문장 때문에 바로 또 바뀌는 것을 막는다")]
+        [SerializeField, Min(0f)] private float _transformLockTime = 0.1f;
         [Tooltip("켜면 Move로 움직일 때 가는 방향을 보도록 좌우를 뒤집는다. 스프라이트는 오른쪽을 보게 그려야 한다 (플레이어는 따로 처리)")]
         [SerializeField] private bool _faceMoveDirection = true;
         [Tooltip("중력이 없는 모습(벽 등)이 조종(Control)을 받았을 때 대신 쓸 중력. 원래 중력이 있으면 그 값을 쓴다")]
@@ -133,6 +137,46 @@ namespace CoffeeSpec.Rules.Entities
         /// 규칙에서는 "사망하면" 조건에만 걸리고, 접촉에서는 빠진다. 변신 원본으로는 계속 쓰인다.
         /// </summary>
         public bool IsRemoved { get; private set; }
+        /// <summary>변신 직후 무적 시간 중인지. 이 동안은 Die 문장과 공격으로 죽지 않는다.</summary>
+        public bool IsInvincible => Time.time < _invincibleUntil;
+        private float _invincibleUntil = -1f;
+        private Coroutine _invincibleRoutine;
+        private float _transformLockedUntil = -1f;
+        private Coroutine _transformLockRoutine;
+
+        /// <summary>지금 변신할 수 있는지. 변신 직후 잠깐은 다른 것으로 바뀌지 않는다.</summary>
+        public bool CanTransform => !Application.isPlaying || Time.time >= _transformLockedUntil;
+
+        /// <summary>변신할 때 부른다. 잠금이 끝나면 규칙을 다시 따져서 그동안 막힌 변신이 그때 일어나게 한다.</summary>
+        internal void StartTransformLock()
+        {
+            if (!Application.isPlaying || _transformLockTime <= 0f || !isActiveAndEnabled) return;
+            _transformLockedUntil = Time.time + _transformLockTime;
+            if (_transformLockRoutine != null) StopCoroutine(_transformLockRoutine);
+            _transformLockRoutine = StartCoroutine(EndTransformLockAfter(_transformLockTime));
+        }
+
+        private System.Collections.IEnumerator EndTransformLockAfter(float seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+            _transformLockRoutine = null;
+            Manager?.NotifyTransformLockEnded(this);
+        }
+        /// <summary>변신할 때 부른다. 무적 시간을 새로 시작하고, 끝나면 규칙을 다시 따지게 알린다 (계속 닿아 있으면 그때 죽는다).</summary>
+        internal void StartTransformInvincible()
+        {
+            if (!Application.isPlaying || _transformInvincibleTime <= 0f || !isActiveAndEnabled) return;
+            _invincibleUntil = Time.time + _transformInvincibleTime;
+            if (_invincibleRoutine != null) StopCoroutine(_invincibleRoutine);
+            _invincibleRoutine = StartCoroutine(EndInvincibleAfter(_transformInvincibleTime));
+        }
+
+        private System.Collections.IEnumerator EndInvincibleAfter(float seconds)
+        {
+            yield return new WaitForSeconds(seconds);
+            _invincibleRoutine = null;
+            Manager?.NotifyInvincibleEnded(this);
+        }
 
         private void Awake()
         {
@@ -201,6 +245,11 @@ namespace CoffeeSpec.Rules.Entities
             _contacts?.ClearTreaders();
             _contacts?.ClearTouching();
             ContactsInvalidated?.Invoke(this);
+            // 꺼지면 코루틴도 멈추므로 무적도 같이 끝낸다
+            _invincibleRoutine = null;
+            _invincibleUntil = -1f;
+            _transformLockRoutine = null;
+            _transformLockedUntil = -1f;
         }
 
         // X는 Y다: 모습과 태그를 함께 바꿔서 이후 문장에서는 Y로 취급되게 한다
@@ -271,7 +320,7 @@ namespace CoffeeSpec.Rules.Entities
         /// </summary>
         public bool TryRemoveByAttack()
         {
-            if (!_removedByAttack || IsRemoved || IsControlled) return false;
+            if (!_removedByAttack || IsRemoved || IsControlled || IsInvincible) return false;
             Remove();
             // Die 문장으로 죽은 것과 똑같이 "사망하면" 조건을 다시 따지게 알린다 (죽는 순간에만 한 번)
             Manager?.NotifyDied(this);
@@ -298,6 +347,7 @@ namespace CoffeeSpec.Rules.Entities
             }
             _rigidbody.linearVelocity = Vector2.zero;
             _rigidbody.simulated = false;
+            RuleManager.Trace($"Remove {name} id={Id} pos={transform.position}"); // TEMP TRACE
             _contacts.ClearTreaders(); // 사라지면 아무도 올라서 있을 수 없다
             _contacts.ClearTouching(); // 사라지면 아무것에도 닿아 있지 않다
             ContactsInvalidated?.Invoke(this);

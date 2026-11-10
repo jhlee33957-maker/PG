@@ -16,18 +16,11 @@ MonoBehaviour:
   _templateIds:
   - //Hello World!
   - 
-  - NounIsNoun, !Person !Control
-  - NounIsNoun, !Exit !Win
-  - 
   - NounIsNoun, !Pigeon !Move
   - NounIfNounIsNoun, !Pigeon !Move Fly
   - 
   - NounTouchNoun, Spike Die
   _wordPool:
-  - _value: Person
-  - _value: Control
-  - _value: Exit
-  - _value: Win
   - _value: Pigeon
   - _value: Move
   - _value: Fly

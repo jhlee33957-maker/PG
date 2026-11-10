@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 using CoffeeSpec.Rules;
 
 namespace CoffeeSpec.Rules.Entities
@@ -48,12 +49,23 @@ namespace CoffeeSpec.Rules.Entities
         internal void TransformInto(WordId id, RuleEntity source)
         {
             if (source == null) return;
+            // 방금 변신했으면 잠깐은 다시 바뀌지 않는다
+            if (!_owner.CanTransform) return;
             // 사망한 대상이 변신하면 새 모습으로 다시 살아난다 (사망 상태는 넘어가지 않는다)
-            if (_owner.IsRemoved) _owner.Revive();
+            bool revived = _owner.IsRemoved;
+            if (revived) _owner.Revive();
             _owner.Word = id;
+            // 무적은 살아난 직후 같은 가시에 또 죽지 않게 하려는 것이다. 살아 있는 채로 번갈아 변신할 때까지 주면 계속 무적이 되어 죽지 않는다
+            if (revived) _owner.StartTransformInvincible();
+            RuleManager.Trace($"TransformInto {_owner.name} -> {id} revived={revived} pos={_owner.transform.position}"); // TEMP TRACE
+            _owner.StartTransformLock();
 
             // 발 위치를 유지해야 커진 콜라이더가 바닥에 박히지 않는다
             float oldBottom = _collider != null ? _collider.bounds.min.y : _owner.transform.position.y;
+            // 발을 맞춘 채 키가 커지면 머리가 위로 자란다. 천장 바로 아래에서 그러면 머리가 천장에 깊이 박히고,
+            // 물리 엔진이 덜 박힌 쪽(천장 위)으로 밀어내서 천장을 뚫고 올라간다. 바뀌기 전에 머리 위 여유를 재 둔다
+            float oldTop = _collider != null ? _collider.bounds.max.y : 0f;
+            float headroom = _collider != null ? _owner.Motor.LimitBySolid(Vector2.up, 10f) : 0f;
 
             _renderer.sprite = source.Appearance.OriginalSprite;
             _renderer.drawMode = source.Appearance.OriginalDrawMode;
@@ -70,9 +82,53 @@ namespace CoffeeSpec.Rules.Entities
             {
                 Physics2D.SyncTransforms();
                 float diff = oldBottom - _collider.bounds.min.y;
+                // 머리가 천장을 넘으면 넘는 만큼 아래로 내린다 (천장 바로 아래에 머리를 맞춘다)
+                float rise = _collider.bounds.max.y + diff - oldTop;
+                if (rise > headroom) diff -= rise - headroom;
                 _rigidbody.position += new Vector2(0f, diff);
                 _owner.transform.position += new Vector3(0f, diff, 0f);
+                Physics2D.SyncTransforms();
+                LiftRiders(oldTop);
             }
+        }
+
+        // 위에 올라탄 것으로 치는 높이 오차. 밟는 순간 살짝 떠 있거나 박혀 있어도 올라탄 것으로 본다
+        private const float RiderTolerance = 0.1f;
+
+        /// <summary>
+        /// 변신 전에 내 윗면(oldTop) 높이에 발이 있던 대상 중, 바뀐 콜라이더 폭 안에 있는 것을 새 윗면 위에 세운다.
+        /// 예전 모습보다 넓어지면 가장자리에 있던 대상도 떨어지지 않고, 높아지면 발이 새 모습에 박혀 옆이나 아래로 밀려나지 않는다.
+        /// 어떤 대상이 무엇으로 변신하든 같은 규칙이 적용되도록 콜라이더 크기만 본다
+        /// </summary>
+        private void LiftRiders(float oldTop)
+        {
+            if (_collider == null || _collider.isTrigger || !_collider.enabled) return;
+            Bounds b = _collider.bounds;
+            float newTop = b.max.y;
+            // 낮아졌으면 위에 있던 대상은 중력으로 새 윗면에 내려앉으므로 따로 할 일이 없다
+            if (newTop <= oldTop - RiderTolerance) return;
+
+            float low = oldTop - RiderTolerance, high = newTop + RiderTolerance;
+            var area = new Vector2(b.size.x, high - low);
+            var center = new Vector2(b.center.x, (low + high) * 0.5f);
+            var lifted = new HashSet<Rigidbody2D>();
+            foreach (var hit in Physics2D.OverlapBoxAll(center, area, 0f))
+            {
+                if (hit == null || hit.isTrigger || hit == _collider) continue;
+                var body = hit.attachedRigidbody;
+                if (body == null || body == _rigidbody || body.bodyType == RigidbodyType2D.Static || !lifted.Add(body)) continue;
+                Bounds o = hit.bounds;
+                // 발이 예전 윗면 근처에 있던 대상만 올린다. 옆에 붙어 있던 대상(발이 더 아래)은 그대로 둔다
+                if (o.min.y < low || o.min.y >= high) continue;
+                // 바뀐 폭 바깥이면 원래대로 떨어진다
+                if (o.max.x <= b.min.x || o.min.x >= b.max.x) continue;
+                float lift = newTop - o.min.y;
+                if (lift <= 0f) continue;
+                body.position += new Vector2(0f, lift);
+                body.transform.position += new Vector3(0f, lift, 0f);
+                if (body.linearVelocity.y < 0f) body.linearVelocity = new Vector2(body.linearVelocity.x, 0f);
+            }
+            if (lifted.Count > 0) Physics2D.SyncTransforms();
         }
 
         private void CopyPhysicsFrom(RuleEntity source)

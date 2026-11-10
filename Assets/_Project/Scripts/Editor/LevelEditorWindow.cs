@@ -47,6 +47,8 @@ namespace CoffeeSpec.EditorTools
             public string scene;      // 대상 씬 이름 (예: TestScene)
             public string scenePath;  // 대상 씬 경로
             public List<MapEntry> entries = new();
+            // 이 맵에서만 쓰는 단어별 날기 높이. 대상 씬의 Level 루트 LevelSettings로 들어간다
+            public List<CoffeeSpec.Rules.LevelSettings.FlyHeight> flyHeights = new();
         }
 
         [Serializable]
@@ -61,6 +63,65 @@ namespace CoffeeSpec.EditorTools
 
         /// <summary>EditorScene의 Level을 비운 뒤 저장할 때는 true로 둬서 맵 데이터가 빈 배치로 덮이지 않게 한다.</summary>
         public static bool SuppressAutoSave;
+
+        // 마지막으로 고른 맵. EditorScene을 나갔다 들어와도, 유니티를 다시 켜도 그 맵을 다시 열기 위해 프로젝트별로 기억한다
+        private static string LastMapPrefKey => "CoffeeSpec.LevelEditor.LastMap." + Application.dataPath;
+
+        /// <summary>
+        /// EditorScene을 닫거나 유니티를 끌 때 불러온 맵의 배치를 JSON과 대상 씬에 저장한다.
+        /// 나갈 때 저장할지 묻지 않고 바로 저장하기 위해서다. 배치가 JSON과 같으면 아무것도 쓰지 않는다.
+        /// </summary>
+        public static void CommitCurrentMap(Scene scene, bool applyNow)
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode || !scene.isLoaded) return;
+            if (FindLevelRoot(scene) == null) return; // Level이 없으면 빈 배치로 덮어쓰지 않는다
+            string jsonPath = null;
+            foreach (var w in Resources.FindObjectsOfTypeAll<LevelEditorWindow>())
+                if (!string.IsNullOrEmpty(w._currentJson)) { jsonPath = w._currentJson; break; }
+            if (string.IsNullOrEmpty(jsonPath)) return;
+
+            var old = ReadJson(jsonPath);
+            if (old == null) return;
+            var data = Capture(scene, allowRootFallback: false);
+            data.scene = old.scene;
+            data.scenePath = ResolveScenePath(old);
+            if (string.IsNullOrEmpty(data.scenePath))
+            {
+                Debug.LogWarning($"[LevelEditor] {old.scene} 씬을 찾을 수 없어서 맵 데이터는 저장하지 않았어.");
+                return;
+            }
+            old.scenePath = data.scenePath;
+            if (JsonUtility.ToJson(old) == JsonUtility.ToJson(data)) return;
+
+            WriteJson(jsonPath, data);
+            // 씬을 닫는 도중에는 다른 씬을 열지 않고 다음 틱에 반영한다. 종료 중에는 다음 틱이 없어서 바로 한다
+            if (applyNow) ApplyToScene(data);
+            else EditorApplication.delayCall += () => ApplyToScene(data);
+        }
+        /// <summary>지금 고른 맵(없으면 마지막으로 고른 맵)의 대상 씬 경로. 툴바의 스테이지씬 버튼이 쓴다. 없으면 null.</summary>
+        public static string CurrentMapScenePath()
+        {
+            string jsonPath = null;
+            foreach (var w in Resources.FindObjectsOfTypeAll<LevelEditorWindow>())
+                if (!string.IsNullOrEmpty(w._currentJson)) { jsonPath = w._currentJson; break; }
+            if (string.IsNullOrEmpty(jsonPath)) jsonPath = EditorPrefs.GetString(LastMapPrefKey, "");
+            if (string.IsNullOrEmpty(jsonPath) || !File.Exists(Path.GetFullPath(jsonPath))) return null;
+            var data = ReadJson(jsonPath);
+            return data == null ? null : ResolveScenePath(data);
+        }
+
+        /// <summary>EditorScene을 열었을 때 마지막으로 고른 맵을 다시 불러온다. JSON이 지워졌으면 아무것도 안 한다.</summary>
+        public static void RestoreLastMap()
+        {
+            string path = EditorPrefs.GetString(LastMapPrefKey, "");
+            if (string.IsNullOrEmpty(path) || !File.Exists(Path.GetFullPath(path))) return;
+            if (SceneManager.GetActiveScene().path != EditorScenePath) return;
+            if (!HasOpenInstances<LevelEditorWindow>()) return;
+            var w = GetWindow<LevelEditorWindow>(false, "Level Editor", false);
+            w.RefreshJsonList();
+            w.LoadMap(path);
+            w.Repaint();
+        }
 
         /// <summary>EditorScene을 비웠을 때 드롭다운도 "맵 선택"으로 되돌린다.</summary>
         public static void ResetCurrentMap()
@@ -121,6 +182,7 @@ namespace CoffeeSpec.EditorTools
         private void OnGUI()
         {
             DrawMapList();
+            DrawLevelSettings();
             EditorGUILayout.Space();
 
             _useSnap = EditorGUILayout.Toggle("그리드 스냅", _useSnap);
@@ -134,6 +196,48 @@ namespace CoffeeSpec.EditorTools
 
             DrawPrefabGrid();
         }
+
+        // 맵마다 다른 설정(날기 높이 등). EditorScene의 Level 루트에서 고치면 씬 저장과 함께 JSON과 대상 씬에 들어간다
+        private void DrawLevelSettings()
+        {
+            if (string.IsNullOrEmpty(_currentJson) || SceneManager.GetActiveScene().path != EditorScenePath) return;
+            var root = FindLevelRoot(SceneManager.GetActiveScene());
+            if (root == null) return;
+            var settings = root.GetComponent<CoffeeSpec.Rules.LevelSettings>();
+            if (settings == null)
+            {
+                if (GUILayout.Button("맵 설정 추가 (날기 높이)")) Undo.AddComponent<CoffeeSpec.Rules.LevelSettings>(root);
+                return;
+            }
+            // 기본 리스트 그리기는 오른쪽에 개수 칸이 붙어서, 개수 없이 머리글만 보이는 ReorderableList로 그린다
+            if (_settingsSO == null || _settingsSO.targetObject != settings)
+            {
+                _settingsSO = new SerializedObject(settings);
+                var prop = _settingsSO.FindProperty("_flyHeights");
+                _flyHeightList = new UnityEditorInternal.ReorderableList(_settingsSO, prop, true, true, true, true)
+                {
+                    drawHeaderCallback = r => EditorGUI.LabelField(r, "이 맵의 날기 높이"),
+                    drawElementCallback = (r, i, active, focused) =>
+                    {
+                        var e = prop.GetArrayElementAtIndex(i);
+                        r.y += 2f;
+                        r.height = EditorGUIUtility.singleLineHeight;
+                        float half = r.width * 0.5f;
+                        EditorGUI.PropertyField(new Rect(r.x, r.y, half - 4f, r.height), e.FindPropertyRelative("word"), GUIContent.none);
+                        float old = EditorGUIUtility.labelWidth;
+                        EditorGUIUtility.labelWidth = 32f;
+                        EditorGUI.PropertyField(new Rect(r.x + half, r.y, half, r.height), e.FindPropertyRelative("height"), new GUIContent("높이"));
+                        EditorGUIUtility.labelWidth = old;
+                    }
+                };
+            }
+            _settingsSO.Update();
+            _flyHeightList.DoLayoutList();
+            _settingsSO.ApplyModifiedProperties();
+        }
+
+        private SerializedObject _settingsSO;
+        private UnityEditorInternal.ReorderableList _flyHeightList;
 
         private void DrawMapList()
         {
@@ -429,6 +533,7 @@ namespace CoffeeSpec.EditorTools
 
             Apply(SceneManager.GetActiveScene(), data);
             _currentJson = jsonPath;
+            EditorPrefs.SetString(LastMapPrefKey, jsonPath);
             Debug.Log($"[LevelEditor] {jsonPath}에서 {data.entries.Count}개를 불러왔어.");
         }
 
@@ -545,6 +650,8 @@ namespace CoffeeSpec.EditorTools
         {
             var data = new MapData();
             var level = FindLevelRoot(scene);
+            var settings = level != null ? level.GetComponent<CoffeeSpec.Rules.LevelSettings>() : null;
+            if (settings != null) data.flyHeights = new List<CoffeeSpec.Rules.LevelSettings.FlyHeight>(settings.FlyHeights);
             var sources = new List<Transform>();
             if (level != null)
                 foreach (Transform child in level.transform) sources.Add(child);
@@ -561,7 +668,8 @@ namespace CoffeeSpec.EditorTools
                     prefabPath = path,
                     name = t.name,
                     position = t.position,
-                    rotation = t.eulerAngles,
+                    // 인스펙터에 보이는 값 그대로 저장한다 (eulerAngles는 -90을 270으로 바꿔 버린다)
+                    rotation = TransformUtils.GetInspectorRotation(t),
                     scale = t.localScale
                 });
             }
@@ -588,9 +696,28 @@ namespace CoffeeSpec.EditorTools
                 go.name = entry.name;
                 go.transform.SetPositionAndRotation(entry.position, Quaternion.Euler(entry.rotation));
                 go.transform.localScale = entry.scale;
+                // 쿼터니언으로만 넣으면 인스펙터 표시가 다른 각도(270 등)로 바뀌므로 저장한 값을 그대로 보이게 한다
+                TransformUtils.SetInspectorRotation(go.transform, entry.rotation);
                 Undo.RegisterCreatedObjectUndo(go, "Apply Level");
             }
+            ApplySettings(root, data);
             EditorSceneManager.MarkSceneDirty(scene);
+        }
+
+        // 맵 설정이 있으면 Level 루트에 LevelSettings를 붙여 값을 넣고, 없으면 떼서 다른 맵 값이 남지 않게 한다
+        private static void ApplySettings(GameObject root, MapData data)
+        {
+            var settings = root.GetComponent<CoffeeSpec.Rules.LevelSettings>();
+            if (data.flyHeights == null || data.flyHeights.Count == 0)
+            {
+                if (settings != null) Undo.DestroyObjectImmediate(settings);
+                return;
+            }
+            if (settings == null) settings = Undo.AddComponent<CoffeeSpec.Rules.LevelSettings>(root);
+            Undo.RecordObject(settings, "Apply Level Settings");
+            settings.FlyHeights.Clear();
+            settings.FlyHeights.AddRange(data.flyHeights);
+            EditorUtility.SetDirty(settings);
         }
 
         private static GameObject FindLevelRoot(Scene scene)
@@ -618,6 +745,7 @@ namespace CoffeeSpec.EditorTools
                 if (data == null) throw new Exception("빈 파일");
                 if (string.IsNullOrEmpty(data.scene)) data.scene = Path.GetFileNameWithoutExtension(assetPath);
                 data.entries ??= new List<MapEntry>();
+                data.flyHeights ??= new List<CoffeeSpec.Rules.LevelSettings.FlyHeight>();
                 return data;
             }
             catch (Exception e)
@@ -642,12 +770,25 @@ namespace CoffeeSpec.EditorTools
     {
         static LevelEditorAutoOpen()
         {
-            EditorSceneManager.sceneOpened += (scene, mode) => { ClearLevel(scene); TryOpen(scene); TryClose(scene, mode); };
-            EditorSceneManager.sceneClosing += (scene, _) => ClearLevel(scene);
+            EditorSceneManager.sceneOpened += (scene, mode) => { ClearLevel(scene); TryOpen(scene); TryRestore(scene); TryClose(scene, mode); };
+            EditorSceneManager.sceneClosing += (scene, _) =>
+            {
+                if (scene.path == LevelEditorWindow.EditorScenePath) LevelEditorWindow.CommitCurrentMap(scene, applyNow: false);
+                ClearLevel(scene);
+            };
+            EditorSceneManager.sceneDirtied += OnSceneDirtied;
             // 유니티를 끌 때는 sceneClosing이 오지 않으므로 종료 직전에 따로 비운다
             EditorApplication.wantsToQuit += OnWantsToQuit;
             // 에디터를 켰을 때 이미 EditorScene이 열려 있는 경우
-            EditorApplication.delayCall += () => TryOpen(SceneManager.GetActiveScene());
+            EditorApplication.delayCall += () =>
+            {
+                var active = SceneManager.GetActiveScene();
+                TryOpen(active);
+                // 컴파일할 때마다 도는 코드라서, 유니티를 켠 직후 한 번만 복원한다 (작업 중인 배치를 덮지 않게)
+                if (SessionState.GetBool(RestoredKey, false)) return;
+                SessionState.SetBool(RestoredKey, true);
+                TryRestore(active);
+            };
         }
 
         /// <summary>
@@ -674,14 +815,13 @@ namespace CoffeeSpec.EditorTools
         }
 
         /// <summary>
-        /// 유니티 종료 직전. EditorScene이 열려 있으면 저장 안 한 배치를 먼저 물어본 뒤(저장하면 맵 데이터에 반영됨) Level 밑을 비우고 저장한다.
-        /// 저장 창에서 취소하면 종료도 취소한다.
+        /// 유니티 종료 직전. EditorScene이 열려 있으면 지금 배치를 묻지 않고 맵 데이터에 저장한 뒤 Level 밑을 비우고 저장한다.
         /// </summary>
         private static bool OnWantsToQuit()
         {
             var scene = SceneManager.GetSceneByPath(LevelEditorWindow.EditorScenePath);
             if (!scene.IsValid() || !scene.isLoaded) return true;
-            if (scene.isDirty && !EditorSceneManager.SaveModifiedScenesIfUserWantsTo(new[] { scene })) return false;
+            LevelEditorWindow.CommitCurrentMap(scene, applyNow: true);
             ClearLevel(scene);
             return true;
         }
@@ -691,6 +831,38 @@ namespace CoffeeSpec.EditorTools
         {
             if (mode != OpenSceneMode.Single || scene.path == LevelEditorWindow.EditorScenePath) return;
             foreach (var w in Resources.FindObjectsOfTypeAll<LevelEditorWindow>()) w.Close();
+        }
+
+        private static bool _quickSavePending;
+
+        /// <summary>
+        /// EditorScene이 바뀌면 다음 틱에 씬 파일만 조용히 저장해 둔다.
+        /// 씬이 dirty로 남아 있으면 다른 씬으로 넘어갈 때 유니티가 저장할지 묻기 때문이다. 맵 데이터 반영은 닫을 때 한 번에 한다.
+        /// </summary>
+        private static void OnSceneDirtied(Scene scene)
+        {
+            if (scene.path != LevelEditorWindow.EditorScenePath || LevelEditorWindow.SuppressAutoSave) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode || _quickSavePending) return;
+            _quickSavePending = true;
+            EditorApplication.delayCall += () =>
+            {
+                _quickSavePending = false;
+                var s = SceneManager.GetSceneByPath(LevelEditorWindow.EditorScenePath);
+                if (!s.IsValid() || !s.isLoaded || !s.isDirty || EditorApplication.isPlayingOrWillChangePlaymode) return;
+                LevelEditorWindow.SuppressAutoSave = true;
+                try { EditorSceneManager.SaveScene(s); }
+                finally { LevelEditorWindow.SuppressAutoSave = false; }
+            };
+        }
+
+        private const string RestoredKey = "CoffeeSpec.LevelEditor.Restored";
+
+        // Level을 비우고 창을 띄운 다음에 마지막 맵을 깐다
+        private static void TryRestore(Scene scene)
+        {
+            if (scene.path != LevelEditorWindow.EditorScenePath) return;
+            if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+            EditorApplication.delayCall += LevelEditorWindow.RestoreLastMap;
         }
 
         private static void TryOpen(Scene scene)

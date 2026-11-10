@@ -10,6 +10,9 @@ namespace CoffeeSpec.Rules.Entities
         private Vector2 _direction;
         // Move로 가는 쪽(1 오른쪽, -1 왼쪽, 0 아직 안 정함). 문장을 다시 적용해도 돌던 방향을 이어 가도록 꺼도 지우지 않는다
         private float _moveSign;
+        // Move가 꺼진 프레임. 같은 프레임에 다시 켜지면(문장 재적용) 가던 방향을 잇고,
+        // 그 밖에는 지금 보는 쪽으로 출발한다. 변신하고 다른 쪽을 보다가 다시 Move가 켜졌는데 옛 방향으로 뒤집히지 않게 한다
+        private int _moveOffFrame = -1;
         // 지난 물리 프레임에 Move로 밀어 준 뒤의 가로 위치와 가야 했던 거리. 실제로 이만큼 못 갔으면 막힌 것이다
         private bool _hasMoveSample;
         private float _moveSampleX;
@@ -38,10 +41,11 @@ namespace CoffeeSpec.Rules.Entities
             if (!on)
             {
                 _direction = Vector2.zero;
+                _moveOffFrame = Time.frameCount;
                 return;
             }
-            // 처음에는 보고 있는 쪽으로 간다
-            if (_moveSign == 0f) _moveSign = _renderer != null && _renderer.flipX ? -1f : 1f;
+            // 새로 켜질 때는 보고 있는 쪽으로 간다
+            if (_moveSign == 0f || _moveOffFrame != Time.frameCount) _moveSign = _renderer != null && _renderer.flipX ? -1f : 1f;
             _direction = new Vector2(_moveSign, 0f);
             FaceDirection(_moveSign);
         }
@@ -73,7 +77,11 @@ namespace CoffeeSpec.Rules.Entities
             if (_hasMoveSample && !_owner.Motor.IsPassThrough)
             {
                 float moved = (_rigidbody.position.x - _moveSampleX) * _moveSign;
-                if (moved < _moveExpectedDx * StallRatio) TurnAround();
+                if (moved < _moveExpectedDx * StallRatio)
+                {
+                    RuleManager.Trace($"Move stall turn {_owner.name} id={_owner.Id} pos={_rigidbody.position} moved={moved:F4} expected={_moveExpectedDx:F4} fly={_owner.Fly.IsFlying}"); // TEMP TRACE
+                    TurnAround();
+                }
             }
             _hasMoveSample = false;
 

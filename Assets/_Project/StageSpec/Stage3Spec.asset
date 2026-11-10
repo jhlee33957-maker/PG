@@ -17,20 +17,11 @@ MonoBehaviour:
   - "// \uC560\uBBF8\uB4A4\uC9C4 \uAE30\uD68D\uC790\uC0C8\uB07C\uB4E4"
   - "// \uAC1C\uC886\uAC19\uB124"
   - 
-  - NounIfNounIsNoun, _ !Tread _
-  - NounTouchNoun, _ !Die
-  - NounIsNoun, !Monster _
-  - NounIsNoun, !Exit !Win
-  - NounIsNoun, !Person !Control
+  - NounIsNoun, !Monster Move
+  - NounTouchNoun, Spike Die
   _wordPool:
+  - _value: Tread
   - _value: Monster
   - _value: Spike
   - _value: Move
   - _value: Die
-  - _value: Tread
-  - _value: Die
-  - _value: Monster
-  - _value: Exit
-  - _value: Win
-  - _value: Person
-  - _value: Control
