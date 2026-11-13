@@ -4104,7 +4104,7 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: <color=#4EC9B0>// </color>Coffee Spec
+  m_text: <color=#4EC9B0>//</color>Cat Script
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 34d90ea1837521248bfaa130815f5588, type: 2}
   m_sharedMaterial: {fileID: -3086436069594591205, guid: 34d90ea1837521248bfaa130815f5588, type: 2}
@@ -9675,9 +9675,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 532541a3d4a5ba3488ea17f0022cb595, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.UI.TitleScreenView
-  _gameTitle: Coffee Spec
+  _gameTitle: Cat Script
   _titleText: {fileID: 730831915}
-  _titlePrefix: '// '
+  _titlePrefix: //
   _titlePrefixColor: {r: 0.30588236, g: 0.7882353, b: 0.6901961, a: 1}
   _commentTargets:
   - {fileID: 1102631969}

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using CoffeeSpec.Rules.Effects;
@@ -379,6 +380,7 @@ namespace CoffeeSpec.Rules
 
         private bool _reapplying;
         private bool _reapplyQueued;
+        private Coroutine _deferredReapply;
 
         // 이동 같은 지속 효과를 끈 뒤 문장을 다시 적용한다. 변신은 영구라 되돌리지 않는다.
         // 적용하는 도중에 다시 요청이 오면(조종이 꺼져 움직임 상태가 풀리는 등) 끝난 뒤에 한 번 더 한다
@@ -392,9 +394,10 @@ namespace CoffeeSpec.Rules
             _reapplying = true;
             _controlledDied = _pendingControlledDeath;
             _pendingControlledDeath = false;
+            PruneDestroyedEntities();
             try
             {
-                for (int i = 0; i < 4; i++)
+                for (int i = 0; i < 8; i++)
                 {
                     _reapplyQueued = false;
                     ReapplyOnce();
@@ -403,12 +406,37 @@ namespace CoffeeSpec.Rules
             }
             finally
             {
+                bool stillQueued = _reapplyQueued;
                 _reapplying = false;
                 _reapplyQueued = false;
                 _endedTouchPairs.Clear();
+                // 한 번의 적용에서 재진입이 너무 많으면 나머지 요청을 버리지 않고 프레임 끝에 다시 한다
+                if (stillQueued) ScheduleDeferredReapply();
             }
             // 사망하면 문장으로 되살아나 조종을 받을 수도 있으니 적용이 다 끝난 뒤에 따진다
             CheckControlledDeath();
+        }
+
+        private void PruneDestroyedEntities()
+        {
+            for (int i = _entities.Count - 1; i >= 0; i--)
+            {
+                if (_entities[i] == null) _entities.RemoveAt(i);
+            }
+        }
+
+        private void ScheduleDeferredReapply()
+        {
+            if (!isActiveAndEnabled || !_started) return;
+            if (_deferredReapply != null) return;
+            _deferredReapply = StartCoroutine(DeferredReapply());
+        }
+
+        private IEnumerator DeferredReapply()
+        {
+            yield return new WaitForEndOfFrame();
+            _deferredReapply = null;
+            if (_started && isActiveAndEnabled) ReapplyAll();
         }
 
         // UI 처리는 하지 않고, 모든 규칙 적용 후 조종 대상의 사망·부활 상태만 알린다.
@@ -798,6 +826,7 @@ namespace CoffeeSpec.Rules
         private RuleEntity GetPrefabTemplate(WordId id)
         {
             if (_prefabTemplates.TryGetValue(id, out var cached) && cached != null) return cached;
+            if (cached == null) _prefabTemplates.Remove(id);
 #if UNITY_EDITOR
             // 인스펙터에서 목록을 안 채웠어도 에디터에서는 바로 되게 한다 (빌드에는 채운 목록이 필요하다)
             if (_transformPrefabs.Count == 0) FillTransformPrefabs();

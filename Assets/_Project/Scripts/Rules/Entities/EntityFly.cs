@@ -81,10 +81,8 @@ namespace CoffeeSpec.Rules.Entities
             _flyTime += Time.fixedDeltaTime;
             float targetY = _flyBaseY + Mathf.Sin(_flyTime * Mathf.PI * 2f / _owner.BobPeriod + _bobPhase) * _owner.BobAmplitude;
             float vy = Mathf.Clamp((targetY - _rigidbody.position.y) * _owner.FlyFollowStrength, -_owner.FlyMaxSpeed, _owner.FlyMaxSpeed);
-            // 목표가 천장보다 높으면 매 프레임 천장을 밀어 올려 몸이 천장 타일에 박힌다. 그러면 타일 이음매에 걸려
-            // 가로로 못 가서 Move가 막힌 줄 알고 계속 돌아선다(왔다갔다). 천장 바로 아래까지만 올라가게 한다
-            if (vy > 0f && _collider != null && !_collider.isTrigger)
-                vy = _owner.Motor.LimitBySolid(Vector2.up, vy * Time.fixedDeltaTime) / Time.fixedDeltaTime;
+            // 목표가 천장보다 높으면 천장에 실제로 닿을 때까지 올라간다. 닿은 뒤에는 EntityMotor.BlockBySolids가
+            // 천장 쪽으로 미는 속도만 빼서, 천장에 박히지 않고 닿은 채로 좌우로 움직인다 (통과 판정 몸은 거기서 미리 막는다)
             _rigidbody.linearVelocity = new Vector2(_rigidbody.linearVelocity.x, vy);
         }
     }

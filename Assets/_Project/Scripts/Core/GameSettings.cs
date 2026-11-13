@@ -62,8 +62,14 @@ namespace CoffeeSpec.Core
         /// </summary>
         public static void ApplyDisplay(int width, int height, bool fullscreen)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // 웹에서는 캔버스 크기를 브라우저가 정한다. SetResolution으로 렌더 크기만 바꾸면 보이는 화면과 클릭 위치가 어긋나므로
+            // 해상도는 건드리지 않고 브라우저 전체화면만 켜고 끈다
+            Screen.fullScreen = fullscreen;
+#else
             var mode = fullscreen ? FullScreenMode.FullScreenWindow : FullScreenMode.Windowed;
             Screen.SetResolution(width, height, mode);
+#endif
             PlayerPrefs.SetInt(WidthKey, width);
             PlayerPrefs.SetInt(HeightKey, height);
             PlayerPrefs.SetInt(FullscreenKey, fullscreen ? 1 : 0);

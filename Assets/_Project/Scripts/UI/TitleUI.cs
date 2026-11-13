@@ -43,7 +43,7 @@ namespace CoffeeSpec.UI
 
         [Header("전체 클리어 팝업 (게임 시작 시)")]
         [SerializeField] private Popup _clearedPopup;
-        [Tooltip("예: Intro 씬으로 이동해 처음부터 다시 시작")]
+        [Tooltip("예: 스테이지 1부터 다시 시작")]
         [SerializeField] private Button _btnClearedYes;
         [Tooltip("아니오: 팝업을 닫고 타이틀에 남음")]
         [SerializeField] private Button _btnClearedNo;
@@ -54,13 +54,6 @@ namespace CoffeeSpec.UI
 
         [Header("스테이지 목록 (위에서부터 스테이지 1, 2, 3 ...)")]
         [SerializeField] private List<StageEntry> _stages = new List<StageEntry>();
-
-        [Header("씬")]
-        [Tooltip("클리어 팝업에서 '예'를 눌렀을 때 이동할 씬")]
-        [SerializeField] private string _introSceneName = "Intro";
-
-        [Tooltip("켜면 세이브가 없을 때 '게임 시작'을 누르면 Intro 씬을 먼저 보여 준다. 끄면 바로 스테이지 1")]
-        [SerializeField] private bool _playIntroOnNewGame = true;
 
         [Header("테스트용 가짜 세이브 (에디터에서만 동작)")]
         [Tooltip("켜면 SaveData.csv 대신 아래 값을 사용한다")]
@@ -94,6 +87,10 @@ namespace CoffeeSpec.UI
             Bind(_btnStageSelect, OnClickStageSelect, "BTN_StageSelect");
             Bind(_btnGuide, OnClickGuide, "BTN_Guide");
             Bind(_btnExit, OnClickExit, "BTN_Exit");
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // 브라우저에서는 게임을 끌 수 없으므로 Exit 줄을 없앤다
+            HideExitLine();
+#endif
             Bind(_btnClearedYes, OnClickClearedYes, "전체 클리어 팝업의 예 버튼");
             Bind(_btnClearedNo, OnClickClearedNo, "전체 클리어 팝업의 아니오 버튼");
 
@@ -167,17 +164,10 @@ namespace CoffeeSpec.UI
 
             SaveData save = LoadSave();
 
-            // 세이브가 없으면 인트로 대신 스테이지 1로 바로 시작한다
+            // 세이브가 없으면 스테이지 1부터 시작한다 (인트로 씬은 쓰지 않는다)
             if (save == null)
             {
-                if (_playIntroOnNewGame)
-                {
-                    SceneFader.LoadScene(_introSceneName);
-                }
-                else
-                {
-                    StartStage(1);
-                }
+                StartStage(1);
                 return;
             }
 
@@ -320,6 +310,73 @@ namespace CoffeeSpec.UI
             OpenPopup(_guidePopup, "가이드 팝업");
         }
 
+        /// <summary>
+        /// 웹 빌드용. Exit 버튼과 그 코드 줄(Line14_BTN_Exit)을 숨기고, 바로 아래 '}' 줄의 글자를 이 자리로 올려 빈 줄이 남지 않게 한다.
+        /// </summary>
+        private void HideExitLine()
+        {
+            if (_btnExit != null)
+            {
+                _btnExit.gameObject.SetActive(false);
+            }
+
+            TitleMenuLine exitLine = null;
+            foreach (TitleMenuLine line in FindObjectsByType<TitleMenuLine>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (line.name.EndsWith("BTN_Exit", StringComparison.Ordinal))
+                {
+                    exitLine = line;
+                    break;
+                }
+            }
+            if (exitLine == null)
+            {
+                return;
+            }
+
+            // 줄 번호(14)는 그대로 두고 코드 글자만 '}'로 바꾼다. 컴포넌트를 끄면 마우스에도 반응하지 않는다
+            exitLine.enabled = false;
+            Transform parent = exitLine.transform.parent;
+            int index = exitLine.transform.GetSiblingIndex();
+            TMP_Text code = FindCodeText(exitLine.transform);
+            TMP_Text brace = null;
+            if (parent != null)
+            {
+                for (int i = 0; i < parent.childCount; i++)
+                {
+                    Transform sibling = parent.GetChild(i);
+                    if (i == index) continue;
+                    TMP_Text text = FindCodeText(sibling);
+                    if (text != null && text.text.Trim() == "}")
+                    {
+                        brace = text;
+                        break;
+                    }
+                }
+            }
+
+            if (code != null)
+            {
+                code.text = brace != null ? brace.text : string.Empty;
+                if (brace != null) code.color = brace.color;
+            }
+            if (brace != null)
+            {
+                brace.transform.parent.gameObject.SetActive(false);
+            }
+            foreach (Image image in exitLine.GetComponentsInChildren<Image>(true))
+            {
+                if (image.gameObject != exitLine.gameObject) image.enabled = false; // 하이라이트, 커서
+                else image.raycastTarget = false;
+            }
+        }
+
+        private static TMP_Text FindCodeText(Transform line)
+        {
+            Transform code = line.Find("Code");
+            return code != null ? code.GetComponent<TMP_Text>() : null;
+        }
+
         private void OnClickExit()
         {
             if (SceneFader.IsLoading)
@@ -342,9 +399,9 @@ namespace CoffeeSpec.UI
                 return;
             }
 
-            // 새로 시작하는 판은 스토리 인트로부터 보여 준다
+            // 새로 시작하는 판은 스테이지 1부터
             HidePopup(_clearedPopup);
-            SceneFader.LoadScene(_introSceneName);
+            StartStage(1);
         }
 
         private void OnClickClearedNo()

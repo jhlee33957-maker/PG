@@ -18,6 +18,8 @@ namespace CoffeeSpec.UI
         [SerializeField] private TMP_Text _label;
 
         private CanvasGroup _canvasGroup;
+        private Color _defaultLabelColor = new Color(0.541f, 0.565f, 0.6f, 1f);
+        private bool _defaultLabelColorCaptured;
 
         /// <summary>단어 묶음에서의 번호.</summary>
         public int Index { get; private set; }
@@ -35,6 +37,11 @@ namespace CoffeeSpec.UI
             Index = index;
             if (_label != null)
             {
+                if (!_defaultLabelColorCaptured)
+                {
+                    _defaultLabelColor = _label.color;
+                    _defaultLabelColorCaptured = true;
+                }
                 _label.text = text;
             }
             else
@@ -67,8 +74,8 @@ namespace CoffeeSpec.UI
             border.color = color;
             border.raycastTarget = false;
 
-            // 칩 바탕 Image도 같은 링 스프라이트(회색)라 작은 화면에서 끊긴 회색 점이 비친다.
-            // 끌기 입력은 이 Image가 받으므로 끄지 않고 투명하게만 만든다 (투명해도 레이캐스트는 받음)
+            // 끌기 입력은 루트 Image가 받는다. 문장 위에 겹칠 때만 SetOverlapStyle이 반투명 바탕을 깐다.
+            // 루트가 링 스프라이트면 작은 화면에서 끊긴 점이 비치므로 투명하게만 둔다.
             var background = GetComponent<Image>();
             if (background != null && background.sprite == outlineSprite)
             {
@@ -76,6 +83,75 @@ namespace CoffeeSpec.UI
                 clear.a = 0f;
                 background.color = clear;
             }
+        }
+
+        /// <summary>
+        /// 문장 글자 위에 자유롭게 겹쳐 둘 때만 반투명 바탕과 얕은 그림자를 깐다.
+        /// 빈칸 안에 들어간 단어나 하단 바의 칩에는 쓰지 않는다 (문장 흐름을 가리지 않기 위해).
+        /// 강조 외곽선이나 빛 번짐은 쓰지 않는다.
+        /// </summary>
+        public void SetOverlapStyle(Sprite fillSprite, Color fillColor, Color textColor, bool overlapping)
+        {
+            Image shadow = EnsureChildImage("ChipShadow");
+            Image fill = EnsureChildImage("ChipFill");
+
+            if (!overlapping)
+            {
+                shadow.gameObject.SetActive(false);
+                fill.gameObject.SetActive(false);
+                if (_label != null)
+                {
+                    _label.color = _defaultLabelColor;
+                }
+                return;
+            }
+
+            var shadowRect = (RectTransform)shadow.transform;
+            shadowRect.SetAsFirstSibling();
+            shadowRect.anchorMin = Vector2.zero;
+            shadowRect.anchorMax = Vector2.one;
+            shadowRect.offsetMin = new Vector2(3f, -4f);
+            shadowRect.offsetMax = new Vector2(3f, -4f);
+            ApplySprite(shadow, fillSprite);
+            shadow.color = new Color(0f, 0f, 0f, 0.28f);
+            shadow.raycastTarget = false;
+            shadow.gameObject.SetActive(true);
+
+            var fillRect = (RectTransform)fill.transform;
+            fillRect.SetSiblingIndex(1);
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+            ApplySprite(fill, fillSprite);
+            fillColor.a = 0.72f;
+            fill.color = fillColor;
+            fill.raycastTarget = false;
+            fill.gameObject.SetActive(true);
+
+            if (_label != null)
+            {
+                _label.color = textColor;
+            }
+        }
+
+        private Image EnsureChildImage(string name)
+        {
+            Transform existing = transform.Find(name);
+            if (existing != null)
+            {
+                return existing.GetComponent<Image>() ?? existing.gameObject.AddComponent<Image>();
+            }
+
+            var child = new GameObject(name, typeof(RectTransform));
+            child.transform.SetParent(transform, false);
+            return child.AddComponent<Image>();
+        }
+
+        private static void ApplySprite(Image image, Sprite sprite)
+        {
+            image.sprite = sprite;
+            image.type = sprite != null && sprite.border != Vector4.zero ? Image.Type.Sliced : Image.Type.Simple;
         }
 
         public void SetUsed(bool used)

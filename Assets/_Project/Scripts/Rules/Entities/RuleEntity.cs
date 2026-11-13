@@ -58,6 +58,9 @@ namespace CoffeeSpec.Rules.Entities
         internal EntityFly Fly => _physics?.Fly;
         internal EntityMove Move => _physics?.Move;
         internal EntityContacts Contacts => _contacts;
+        internal Rigidbody2D Body => _rigidbody;
+        /// <summary>대상의 원래 콜라이더(프리팹의 박스). 고정 블록의 면 선(EdgeCollider2D)은 여기에 포함되지 않는다.</summary>
+        internal Collider2D MainCollider => _collider;
         internal EntityAppearance Appearance => _appearance;
         internal float MoveSpeed => _moveSpeed;
         internal RigidbodyType2D BodyType { get => _bodyType; set => _bodyType = value; }
@@ -137,9 +140,9 @@ namespace CoffeeSpec.Rules.Entities
         /// <summary>변신 직후 무적 시간 중인지. 이 동안은 Die 문장으로 죽지 않는다.</summary>
         public bool IsInvincible => Time.time < _invincibleUntil;
         private float _invincibleUntil = -1f;
-        private Coroutine _invincibleRoutine;
         private float _transformLockedUntil = -1f;
-        private Coroutine _transformLockRoutine;
+        private bool _notifyTransformLockEnded;
+        private bool _notifyInvincibleEnded;
 
         /// <summary>지금 변신할 수 있는지. 변신 직후 잠깐은 다른 것으로 바뀌지 않는다.</summary>
         public bool CanTransform => !Application.isPlaying || Time.time >= _transformLockedUntil;
@@ -149,30 +152,30 @@ namespace CoffeeSpec.Rules.Entities
         {
             if (!Application.isPlaying || _transformLockTime <= 0f || !isActiveAndEnabled) return;
             _transformLockedUntil = Time.time + _transformLockTime;
-            if (_transformLockRoutine != null) StopCoroutine(_transformLockRoutine);
-            _transformLockRoutine = StartCoroutine(EndTransformLockAfter(_transformLockTime));
+            _notifyTransformLockEnded = true;
         }
 
-        private System.Collections.IEnumerator EndTransformLockAfter(float seconds)
-        {
-            yield return new WaitForSeconds(seconds);
-            _transformLockRoutine = null;
-            Manager?.NotifyTransformLockEnded(this);
-        }
         /// <summary>변신할 때 부른다. 무적 시간을 새로 시작하고, 끝나면 규칙을 다시 따지게 알린다 (계속 닿아 있으면 그때 죽는다).</summary>
         internal void StartTransformInvincible()
         {
             if (!Application.isPlaying || _transformInvincibleTime <= 0f || !isActiveAndEnabled) return;
             _invincibleUntil = Time.time + _transformInvincibleTime;
-            if (_invincibleRoutine != null) StopCoroutine(_invincibleRoutine);
-            _invincibleRoutine = StartCoroutine(EndInvincibleAfter(_transformInvincibleTime));
+            _notifyInvincibleEnded = true;
         }
 
-        private System.Collections.IEnumerator EndInvincibleAfter(float seconds)
+        // 코루틴은 오브젝트가 잠깐 꺼지거나 예외가 나면 알림 없이 끊긴다. 시간만 보고 한 번 알린다.
+        private void FlushTransformTimers()
         {
-            yield return new WaitForSeconds(seconds);
-            _invincibleRoutine = null;
-            Manager?.NotifyInvincibleEnded(this);
+            if (_notifyTransformLockEnded && Time.time >= _transformLockedUntil)
+            {
+                _notifyTransformLockEnded = false;
+                Manager?.NotifyTransformLockEnded(this);
+            }
+            if (_notifyInvincibleEnded && Time.time >= _invincibleUntil)
+            {
+                _notifyInvincibleEnded = false;
+                if (!IsRemoved) Manager?.NotifyInvincibleEnded(this);
+            }
         }
 
         private void Awake()
@@ -215,6 +218,7 @@ namespace CoffeeSpec.Rules.Entities
         {
             RuleManager.Available += BindManager;
             BindManager(RuleManager.Instance);
+            SolidSurfaces.MarkDirty(this);
         }
 
         private void Start()
@@ -238,16 +242,17 @@ namespace CoffeeSpec.Rules.Entities
         private void OnDisable()
         {
             RuleManager.Available -= BindManager;
+            SolidSurfaces.Forget(this);
             if (_manager != null) _manager.Unregister(this);
             _manager = null;
             _contacts?.ClearTreaders();
             _contacts?.ClearTouching();
             ContactsInvalidated?.Invoke(this);
-            // 꺼지면 코루틴도 멈추므로 무적도 같이 끝낸다
-            _invincibleRoutine = null;
+            // 꺼지면 타이머 알림도 같이 끝낸다 (다시 켜질 때 Register가 규칙을 다시 적용한다)
             _invincibleUntil = -1f;
-            _transformLockRoutine = null;
             _transformLockedUntil = -1f;
+            _notifyTransformLockEnded = false;
+            _notifyInvincibleEnded = false;
         }
 
         // X는 Y다: 모습과 태그를 함께 바꿔서 이후 문장에서는 Y로 취급되게 한다
@@ -272,6 +277,8 @@ namespace CoffeeSpec.Rules.Entities
         // 지금 모습의 바디 타입(프리팹 기준)을 적용한다. 나는 중이거나 조종받는 중에는 Static 모습이어도 Dynamic으로 둔다
         internal void ApplyBodyType()
         {
+            // 모양(변신)이나 바디 종류가 바뀌었을 수 있다. 고정 블록 면 선은 다음 물리 프레임 전에 다시 맞춘다
+            SolidSurfaces.MarkDirty(this);
             var type = _physics.Fly.IsFlying || _controlled ? RigidbodyType2D.Dynamic : _bodyType;
             if (_rigidbody.bodyType == type) return;
             _rigidbody.bodyType = type;
@@ -336,6 +343,7 @@ namespace CoffeeSpec.Rules.Entities
             _contacts.ClearTreaders(); // 사라지면 아무도 올라서 있을 수 없다
             _contacts.ClearTouching(); // 사라지면 아무것에도 닿아 있지 않다
             ContactsInvalidated?.Invoke(this);
+            SolidSurfaces.MarkDirty(this);
         }
 
         // 사망 상태를 풀고 다시 보이게, 부딪히게 한다. 변신으로 살아날 때만 쓴다
@@ -350,6 +358,7 @@ namespace CoffeeSpec.Rules.Entities
             _collidersOffByRemove.Clear();
             _rigidbody.simulated = true;
             _rigidbody.linearVelocity = Vector2.zero;
+            SolidSurfaces.MarkDirty(this);
             // 변신에서 발 위치를 재려면 다시 켠 콜라이더의 크기가 바로 맞아야 한다
             Physics2D.SyncTransforms();
         }
@@ -393,9 +402,17 @@ namespace CoffeeSpec.Rules.Entities
             _id = -1;
         }
 
+        private void Update()
+        {
+            FlushTransformTimers();
+        }
+
         private void FixedUpdate()
         {
+            // 이번 물리 계산 전에, 바뀐 고정 블록의 드러난 면을 맞춘다 (바뀐 것이 없으면 바로 끝난다)
+            SolidSurfaces.Flush();
             if (IsRemoved) return;
+            FlushTransformTimers();
             _physics.Step();
         }
 
