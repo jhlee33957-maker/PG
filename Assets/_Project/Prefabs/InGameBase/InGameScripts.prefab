@@ -96,13 +96,13 @@ MonoBehaviour:
     - _value: Person
     - _value: Person
     Words: 
-    Preview: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
+    Preview: "\uACE0\uC591\uC774\uC740(\uB294) \uACE0\uC591\uC774\uAC00 \uB41C\uB2E4"
   - TemplateId: NounIsNoun
     WordIds:
     - _value: Person
     - _value: Person
     Words: 
-    Preview: "\uC0AC\uB78C\uC740(\uB294) \uC0AC\uB78C\uC774\uB2E4"
+    Preview: "\uACE0\uC591\uC774\uC740(\uB294) \uACE0\uC591\uC774\uAC00 \uB41C\uB2E4"
   _innateEffects:
   - Noun:
       _value: Exit
@@ -114,7 +114,15 @@ MonoBehaviour:
     - _value: Control
   _specPanel: {fileID: 0}
   _mapLoader: {fileID: 0}
-  _transformPrefabs: []
+  _transformPrefabs:
+  - {fileID: 506416088639147358, guid: 558af7ba306574e428ccc9a9f0746fb0, type: 3}
+  - {fileID: -6313183252991738806, guid: 999beaee7af60054d8224ab43ade0119, type: 3}
+  - {fileID: 3241265743147172070, guid: 2ffebd2b0d7740e418fc951394d33517, type: 3}
+  - {fileID: 3255818617615678163, guid: 12a4fdfe77e6ebb42a77ac94ecaaa131, type: 3}
+  - {fileID: 5112394632848080477, guid: d802678147ea4ad4d9e6c24dc40bddb1, type: 3}
+  - {fileID: -5423496902571276619, guid: a6c5b760f1e0d1c40befb130e3ad96e6, type: 3}
+  - {fileID: 506416088639147358, guid: b1a6036d2c24d1b41906f89c558640e3, type: 3}
+  - {fileID: 506416088639147358, guid: 2a0e591a345398349b6ce8110abfb161, type: 3}
 --- !u!1 &4850396206242732975
 GameObject:
   m_ObjectHideFlags: 0
@@ -196,3 +204,4 @@ MonoBehaviour:
   _ruleManager: {fileID: 2109972919120206838}
   _nextStageDelay: 2
   _titleSceneName: Title
+  _afterEnterDelay: 0.4

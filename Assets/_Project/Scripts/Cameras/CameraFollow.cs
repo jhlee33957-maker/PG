@@ -71,10 +71,23 @@ namespace CoffeeSpec.Cameras
             _homePosition = transform.position;
             _smoothPosition = _homePosition;
             _homeSize = _camera.orthographicSize;
+            _pixelPerfect = GetComponent<PixelPerfectCamera>();
+            if (_pixelPerfect != null)
+            {
+                _designRefX = _pixelPerfect.refResolutionX;
+                _designRefY = _pixelPerfect.refResolutionY;
+                // 씬에 적힌 orthographicSize는 기준 해상도(640x360, 32 PPU -> 5.625)와 다를 수 있다.
+                // 기본으로 보이는 범위는 항상 기준 해상도를 따른다.
+                if (_designRefY > 0 && _pixelPerfect.assetsPPU > 0)
+                    _homeSize = _designRefY * 0.5f / _pixelPerfect.assetsPPU;
+            }
         }
 
         private void LateUpdate()
         {
+            // 창 크기·전체화면이 바뀌어도 이번 프레임 실제 화면 기준으로 픽셀 배율과 보이는 범위를 다시 정한다
+            UpdateViewSize();
+
             if (!_searchedSpecPanel)
             {
                 _searchedSpecPanel = true;
@@ -329,30 +342,47 @@ namespace CoffeeSpec.Cameras
             return new Vector3(x, y, position.z);
         }
 
-        private Vector2 GetHalfViewSize()
+        private Vector2 GetHalfViewSize() => _halfView;
+
+        // ---------------- 화면 크기 ----------------
+        // Pixel Perfect Camera는 기본적으로 정수 배율(zoom = min(가로/기준가로, 세로/기준세로)의 내림, 최소 1)로
+        // 보이는 월드 범위를 바꾼다. 잘라내기를 끄면 창이 1280x720보다 조금만 작아도 배율이 2에서 1로 떨어져
+        // 벽 바깥이 보이고, 기준에 가깝게 보이려고 배율을 올리면 640x360과 1280x720 사이 창(웹 창모드, iframe 등)에서
+        // 기준보다 좁은 범위만 보여 화면이 확대된다. 창이 기준보다 작을 때도 배율이 1로 고정되어 확대된다.
+        // 그래서 기준 해상도(640x360)는 그대로 두고, 그 월드 범위를 창에 비율을 유지한 채 맞춘다(남는 곳은 검은 띠).
+        // 배율은 소수도, 1보다 작은 값도 허용한다. 보이는 범위는 창 크기와 관계없이 같다.
+        private PixelPerfectCamera _pixelPerfect;
+        private int _designRefX;
+        private int _designRefY;
+        private Vector2 _halfView = new(1f, 1f);
+
+        private void UpdateViewSize()
         {
-            // Pixel Perfect Camera가 있으면 렌더링 직전에 orthographicSize를 자기 계산값으로 덮어쓴다.
-            // 그래서 우리가 넣은 크기(_homeSize)로 가두면 실제 보이는 화면이 더 넓어 벽 바깥이 살짝 보였다. 실제 보이는 크기로 잰다
-            if (_pixelPerfect == null && !_searchedPixelPerfect)
+            RenderTexture target = _camera.targetTexture;
+            int screenW = target != null ? target.width : Screen.width;
+            int screenH = target != null ? target.height : Screen.height;
+            if (screenW <= 0 || screenH <= 0) return;
+
+            if (_pixelPerfect == null || !_pixelPerfect.isActiveAndEnabled || _designRefX <= 0 || _designRefY <= 0)
             {
-                _searchedPixelPerfect = true;
-                _pixelPerfect = GetComponent<PixelPerfectCamera>();
+                float halfHeight = _camera.orthographicSize;
+                _halfView = new Vector2(halfHeight * ((float)screenW / screenH), halfHeight);
+                return;
             }
-            if (_pixelPerfect != null && _pixelPerfect.isActiveAndEnabled && _pixelPerfect.pixelRatio > 0)
-            {
-                float ppu = _pixelPerfect.assetsPPU;
-                float ratio = _pixelPerfect.pixelRatio;
-                float width = _pixelPerfect.cropFrameX ? _pixelPerfect.refResolutionX : _camera.pixelWidth / ratio;
-                float height = _pixelPerfect.cropFrameY ? _pixelPerfect.refResolutionY : _camera.pixelHeight / ratio;
-                return new Vector2(width / ppu * 0.5f, height / ppu * 0.5f);
-            }
-            float halfHeight = _camera.orthographicSize;
-            return new Vector2(halfHeight * _camera.aspect, halfHeight);
+
+            float ppu = Mathf.Max(1, _pixelPerfect.assetsPPU);
+            RestoreDesignRef();
+            // StretchFill: 기준 해상도로 그린 뒤, 창에 맞춰 비율을 유지하며 확대·축소한다 (1보다 작아도 된다)
+            if (_pixelPerfect.cropFrame != PixelPerfectCamera.CropFrame.StretchFill)
+                _pixelPerfect.cropFrame = PixelPerfectCamera.CropFrame.StretchFill;
+            _halfView = new Vector2(_designRefX * 0.5f / ppu, _designRefY * 0.5f / ppu);
         }
 
-        private PixelPerfectCamera _pixelPerfect;
-        private bool _searchedPixelPerfect;
-
+        private void RestoreDesignRef()
+        {
+            if (_pixelPerfect.refResolutionX != _designRefX) _pixelPerfect.refResolutionX = _designRefX;
+            if (_pixelPerfect.refResolutionY != _designRefY) _pixelPerfect.refResolutionY = _designRefY;
+        }
         // 카메라가 픽셀 사이에 서면 타일마다 반올림이 달라져서 화면 전체가 일렁인다. 픽셀 격자에 맞춰 세운다
         private Vector3 SnapToPixel(Vector3 position)
         {

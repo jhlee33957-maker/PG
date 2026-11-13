@@ -43,6 +43,32 @@ namespace CoffeeSpec.Core
             }
         }
 
+        private static AudioSource _previewSource;
+
+        /// <summary>
+        /// 설정에서 효과음 크기를 바꿀 때 점프 소리를 지금 배율로 들려 준다.
+        /// 슬라이더를 끄는 동안 계속 불려도 처음부터 다시 틀지 않고, 이미 울고 있으면 크기만 바꿔 소리가 끊기지 않게 한다.
+        /// 일시정지(timeScale 0) 중에도 AudioSource는 그대로 재생된다.
+        /// </summary>
+        public static void PlayPreview()
+        {
+            if (!LoadClip()) return;
+            if (_previewSource == null)
+            {
+                var go = new GameObject(SourceName);
+                Object.DontDestroyOnLoad(go);
+                _previewSource = go.AddComponent<AudioSource>();
+                _previewSource.playOnAwake = false;
+                _previewSource.spatialBlend = 0f;
+                _previewSource.ignoreListenerPause = true;
+            }
+            _previewSource.volume = JumpVolume * GameSettings.SfxVolume;
+            if (_previewSource.isPlaying) return;
+            _previewSource.clip = _clip;
+            _previewSource.pitch = Random.Range(PitchMin, PitchMax);
+            _previewSource.Play();
+        }
+
         // 꺼 둔(숨긴) 그림이어도 모습은 고양이로 본다. 캣도어 연출 중 진짜 고양이는 숨겨져 있다
         private static bool LooksLikeCat(SpriteRenderer r) =>
             r != null && r.sprite != null && r.sprite.texture != null && r.sprite.texture.name == CatTexture;

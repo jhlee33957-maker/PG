@@ -46,7 +46,8 @@ namespace CoffeeSpec.Rules.Entities
         /// </summary>
         internal void TransformInto(WordId id, RuleEntity source)
         {
-            if (source == null) return;
+            if (source == null || _owner == null) return;
+            if (source.Appearance == null || _renderer == null || _rigidbody == null) return;
             // 방금 변신했으면 잠깐은 다시 바뀌지 않는다
             if (!_owner.CanTransform) return;
             // 사망한 대상이 변신하면 새 모습으로 다시 살아난다 (사망 상태는 넘어가지 않는다)

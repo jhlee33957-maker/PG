@@ -13,8 +13,13 @@ namespace CoffeeSpec.Rules.Entities
         private bool _touchable;
         private bool _hadTouch;
         private bool _hadTread;
-        private readonly HashSet<RuleEntity> _treaders = new();
+        // 밟힘은 (내 콜라이더, 상대 콜라이더) 쌍마다 기억한다. 한 대상이 콜라이더를 여러 개 가질 수 있어서(고정 블록의 면 선)
+        // 한 쌍이 떨어져도 다른 쌍으로 계속 밟고 있으면 밟힘이 유지되어야 한다
+        private readonly Dictionary<(Collider2D mine, Collider2D other), RuleEntity> _treadPairs = new();
         private readonly HashSet<Collider2D> _touching = new();
+        // 같은 상대 콜라이더와 내 콜라이더 여러 개가 동시에 닿아 있을 수 있다. 마지막 쌍이 떨어질 때만 떨어진 것으로 본다
+        private readonly Dictionary<Collider2D, int> _pairCount = new();
+        private readonly List<(Collider2D mine, Collider2D other)> _staleTread = new();
         // 벽·바닥처럼 RuleEntity가 없는 콜라이더도 null 값으로 캐시한다.
         private readonly Dictionary<Collider2D, RuleEntity> _owners = new();
         private readonly HashSet<RuleEntity> _peers = new();
@@ -40,7 +45,7 @@ namespace CoffeeSpec.Rules.Entities
             get
             {
                 // 벽은 밟는 쪽으로 치지 않는다. 벽 위에 얹혀 있거나 벽이 붙어 있기만 해도 '밟히면' 조건이 켜지면 안 된다
-                foreach (var t in _treaders)
+                foreach (var t in _treadPairs.Values)
                     if (t != null && !t.IsRemoved && t.isActiveAndEnabled && t.Id != TouchIgnoredId) return true;
                 return false;
             }
@@ -96,6 +101,7 @@ namespace CoffeeSpec.Rules.Entities
             {
                 if (lost == null) _owners.TryGetValue(c, out lost);
                 _touching.Remove(c);
+                _pairCount.Remove(c);
                 ForgetCollider(c);
             }
             _stale.Clear();
@@ -138,10 +144,11 @@ namespace CoffeeSpec.Rules.Entities
             foreach (var c in _stale)
             {
                 changed |= _touching.Remove(c);
+                _pairCount.Remove(c);
                 ForgetCollider(c);
             }
             _stale.Clear();
-            _treaders.Remove(entity);
+            RemoveTreader(entity);
             NotifyTreadStateChanged();
             if (changed) NotifyTouchSetChanged(entity, ended: true);
         }
@@ -169,20 +176,53 @@ namespace CoffeeSpec.Rules.Entities
             if (entering)
             {
                 entity = ResolveCollider(other);
-                if (IsValid(other, entity)) changed = _touching.Add(other);
+                if (IsValid(other, entity))
+                {
+                    _pairCount.TryGetValue(other, out int count);
+                    _pairCount[other] = count + 1;
+                    changed = _touching.Add(other);
+                }
                 else
                 {
                     changed = _touching.Remove(other);
+                    _pairCount.Remove(other);
                     ForgetCollider(other);
                 }
             }
             else
             {
+                // 내 다른 콜라이더로 아직 닿아 있으면 떨어진 것이 아니다
+                if (_pairCount.TryGetValue(other, out int count) && count > 1)
+                {
+                    _pairCount[other] = count - 1;
+                    return;
+                }
+                _pairCount.Remove(other);
                 _owners.TryGetValue(other, out entity);
                 changed = _touching.Remove(other);
                 ForgetCollider(other);
             }
-            if (changed) NotifyTouchSetChanged(entity, ended: !entering);
+            if (!changed) return;
+            // 같은 대상의 다른 콜라이더(예: 블록 모서리의 두 면)에 아직 닿아 있으면 그 대상과의 접촉은 끝나지 않았다
+            bool ended = !entering && !IsTouchingEntity(entity);
+            NotifyTouchSetChanged(entity, ended: ended);
+        }
+
+        private bool IsTouchingEntity(RuleEntity entity)
+        {
+            if (ReferenceEquals(entity, null)) return false;
+            foreach (var c in _touching)
+                if (_owners.TryGetValue(c, out var e) && ReferenceEquals(e, entity)) return true;
+            return false;
+        }
+
+        private void RemoveTreader(RuleEntity entity)
+        {
+            _staleTread.Clear();
+            foreach (var pair in _treadPairs)
+                if (ReferenceEquals(pair.Value, entity)) _staleTread.Add(pair.Key);
+            foreach (var key in _staleTread) _treadPairs.Remove(key);
+            _staleTread.Clear();
         }
 
         internal void SetTouchable(bool on)
@@ -196,11 +236,12 @@ namespace CoffeeSpec.Rules.Entities
         {
             var other = collision.collider != null ? ResolveCollider(collision.collider) : null;
             if (other == null || other == _owner) return;
+            var key = (collision.otherCollider, collision.collider);
             if (entering)
             {
-                if (IsPressedFromAbove(collision)) _treaders.Add(other);
+                if (IsPressedFromAbove(collision)) _treadPairs[key] = other;
             }
-            else _treaders.Remove(other);
+            else _treadPairs.Remove(key);
             NotifyTreadStateChanged();
         }
 
@@ -217,13 +258,15 @@ namespace CoffeeSpec.Rules.Entities
             bool trigger = _baseIsTrigger && !_treadable && !_touchable;
             if (_collider.isTrigger == trigger) return;
             _collider.isTrigger = trigger;
+            // 통과 판정이 바뀌면 고정 블록의 면 선도 다시 만든다 (통과 판정 몸은 면 선을 쓰지 않는다)
+            SolidSurfaces.MarkDirty(_owner);
             bool wasTouched = _hadTouch;
             bool hadContacts = _touching.Count > 0;
             // 변신은 콜라이더를 교체하지 않고 크기만 바꾼다. 판정 종류가 바뀔 때만 기존처럼 비운다.
             ClearTouching();
             if (hadContacts) _owner.Manager?.NotifyTouchChanged(_owner, wasTouched);
             if (!trigger) return;
-            _treaders.Clear();
+            _treadPairs.Clear();
             NotifyTreadStateChanged();
         }
 
@@ -243,7 +286,7 @@ namespace CoffeeSpec.Rules.Entities
 
         internal void ClearTreaders()
         {
-            _treaders.Clear();
+            _treadPairs.Clear();
             _hadTread = false;
         }
 
@@ -253,6 +296,7 @@ namespace CoffeeSpec.Rules.Entities
                 if (!ReferenceEquals(peer, null)) peer.ContactsInvalidated -= _onPeerInvalidated;
             _peers.Clear();
             _touching.Clear();
+            _pairCount.Clear();
             _owners.Clear();
             _hadTouch = false;
         }

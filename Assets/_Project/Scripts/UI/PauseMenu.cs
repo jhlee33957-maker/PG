@@ -12,7 +12,7 @@ using UnityEngine.UI;
 namespace CoffeeSpec.UI
 {
     /// <summary>
-    /// 스테이지에서 ESC를 누르면 뜨는 2단 메뉴. 1단: 설정 / 메인화면 / 게임종료, 2단(설정): 배경음악·효과음 볼륨, 화면모드, 해상도.
+    /// 스테이지에서 ESC를 누르면 뜨는 2단 메뉴. 1단: 설정 / 스테이지 선택 / 메인화면 / 게임종료. 스테이지 선택은 지금 스테이지 위에 타이틀과 같은 목록을 띄운다. 2단(설정): 배경음악·효과음 볼륨, 화면모드, 해상도.
     /// 씬·프리팹을 고치지 않아도 되게 게임이 켜질 때 한 번 만들어 씬이 바뀌어도 남기고, 화면도 전부 코드로 그린다.
     /// 디자인은 귀 없는 둥근 창 + 선택한 줄 옆에 앉아 있는 플레이어 고양이(커서) 시안(C안 수정)을 따른다.
     /// </summary>
@@ -28,6 +28,13 @@ namespace CoffeeSpec.UI
         private static readonly Color TrackColor = Hex(0x3A3F4B);
         private static readonly Color KnobColor = Hex(0xF5C189);
         private static readonly Color DimColor = new Color(10f / 255f, 10f / 255f, 14f / 255f, 0.67f);
+        // 타이틀 스테이지 선택 팝업과 같은 색
+        private static readonly Color StageWindowColor = Hex(0x252526);
+        private static readonly Color StageTitleBarColor = Hex(0x2D2F34);
+        private static readonly Color StageCardColor = Hex(0x3A3D44);
+        private static readonly Color StageOutlineColor = Hex(0x3C3F45);
+        private static readonly Color StageLabelColor = Hex(0xD4D4D4);
+        private static readonly Color StageCloseColor = Hex(0xA0A4AC);
 
         private const string TitleSceneName = "Title";
         private const string CatSheet = "PlayerCat";
@@ -41,7 +48,7 @@ namespace CoffeeSpec.UI
         /// <summary>메뉴가 열려 있으면 true. 다른 스크립트가 입력을 막을 때 쓸 수 있다.</summary>
         public static bool IsOpen => _instance != null && _instance._page != Page.Closed;
 
-        private enum Page { Closed, Main, Settings }
+        private enum Page { Closed, Main, Settings, StageSelect }
 
         private Page _page = Page.Closed;
         private float _timeScaleBeforeOpen = 1f;
@@ -51,6 +58,7 @@ namespace CoffeeSpec.UI
         private GameObject _root;
         private GameObject _mainPanel;
         private GameObject _settingsPanel;
+        private GameObject _stagePanel;
         private TMP_FontAsset _font;
         private Sprite _roundFill;
         private Sprite _roundEdge;
@@ -58,8 +66,10 @@ namespace CoffeeSpec.UI
 
         private readonly List<Row> _mainRows = new List<Row>();
         private readonly List<Row> _settingRows = new List<Row>();
+        private readonly List<Row> _stageRows = new List<Row>();
         private int _mainIndex;
         private int _settingIndex;
+        private int _stageIndex;
 
         private Image _cat;
         private Sprite[] _catFrames;
@@ -85,6 +95,11 @@ namespace CoffeeSpec.UI
             public TextMeshProUGUI Label;
             public Action Submit;
             public Action<int> Adjust;
+            // 회색으로 보이고 선택·실행되지 않는 줄 (웹 빌드의 게임종료)
+            public bool Disabled;
+            // 스테이지 선택 칸. 잠기면 칸 색을 검게 하고 섬네일을 숨긴다
+            public Image Card;
+            public GameObject Thumb;
         }
 
         // ---------------- 생성 ----------------
@@ -120,7 +135,7 @@ namespace CoffeeSpec.UI
         }
 
         /// <summary>
-        /// 타이틀 화면의 Settings 줄에서 부른다. 1단 메뉴(설정/메인화면/게임종료) 없이 설정 창만 연다.
+        /// 타이틀 화면의 Settings 줄에서 부른다. 1단 메뉴(설정/스테이지 선택/메인화면/게임종료) 없이 설정 창만 연다.
         /// 타이틀에는 멈출 게임이 없으므로 시간은 건드리지 않는다.
         /// </summary>
         public static void OpenSettings()
@@ -169,13 +184,22 @@ namespace CoffeeSpec.UI
             bool right = kb.rightArrowKey.wasPressedThisFrame || kb.dKey.wasPressedThisFrame;
             bool submit = kb.enterKey.wasPressedThisFrame || kb.numpadEnterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame;
 
-            var rows = _page == Page.Main ? _mainRows : _settingRows;
-            int index = _page == Page.Main ? _mainIndex : _settingIndex;
-            if (up) Select((index - 1 + rows.Count) % rows.Count);
-            if (down) Select((index + 1) % rows.Count);
-            index = _page == Page.Main ? _mainIndex : _settingIndex;
-            if (left) rows[index].Adjust?.Invoke(-1);
-            if (right) rows[index].Adjust?.Invoke(1);
+            var rows = CurrentRows();
+            int index = CurrentIndex();
+            if (_page == Page.StageSelect)
+            {
+                if (up || left) Select(NextEnabled(rows, index, -1));
+                if (down || right) Select(NextEnabled(rows, index, 1));
+            }
+            else
+            {
+                if (up) Select(NextEnabled(rows, index, -1));
+                if (down) Select(NextEnabled(rows, index, 1));
+                index = CurrentIndex();
+                if (left) rows[index].Adjust?.Invoke(-1);
+                if (right) rows[index].Adjust?.Invoke(1);
+            }
+            index = CurrentIndex();
             if (submit) rows[index].Submit?.Invoke();
         }
 
@@ -191,6 +215,9 @@ namespace CoffeeSpec.UI
                     break;
                 case Page.Main:
                     Close();
+                    break;
+                case Page.StageSelect:
+                    SetPage(Page.Main);
                     break;
                 case Page.Settings:
                     // 적용 안 한 화면 설정은 버리고 1단으로 돌아간다 (볼륨은 움직이는 즉시 저장됨). 타이틀에서 열었으면 닫는다
@@ -224,29 +251,43 @@ namespace CoffeeSpec.UI
             _root.SetActive(page != Page.Closed);
             _mainPanel.SetActive(page == Page.Main);
             _settingsPanel.SetActive(page == Page.Settings);
+            if (_stagePanel != null) _stagePanel.SetActive(page == Page.StageSelect);
             if (page == Page.Settings)
             {
                 LoadPendingDisplay();
                 _settingIndex = 0;
             }
-            if (page != Page.Closed) Select(page == Page.Main ? _mainIndex : _settingIndex);
+            if (page != Page.Closed) Select(CurrentIndex());
+        }
+
+        // 막힌 줄은 건너뛰고 다음 줄을 고른다
+        private static int NextEnabled(List<Row> rows, int index, int step)
+        {
+            for (int n = 1; n <= rows.Count; n++)
+            {
+                int next = ((index + step * n) % rows.Count + rows.Count) % rows.Count;
+                if (!rows[next].Disabled) return next;
+            }
+            return index;
         }
 
         private void Select(int index)
         {
-            var rows = _page == Page.Main ? _mainRows : _settingRows;
-            if (_page == Page.Main) _mainIndex = index; else _settingIndex = index;
+            var rows = CurrentRows();
+            if (rows[index].Disabled) return;
+            SetCurrentIndex(index);
             for (int i = 0; i < rows.Count; i++)
             {
                 bool on = i == index;
                 if (rows[i].Highlight != null) rows[i].Highlight.enabled = on;
-                if (rows[i].Label != null) rows[i].Label.color = on ? AccentColor : TextColor;
+                if (rows[i].Label != null) rows[i].Label.color = rows[i].Disabled ? HintColor : on ? AccentColor : TextColor;
             }
             RefreshSettingVisuals();
 
             // 고양이 커서를 선택한 줄 왼쪽에 앉힌다. 적용 버튼 줄은 커서 대신 버튼 색으로 보여 준다
             var row = rows[index];
-            bool showCat = row.Label != null;
+            // 스테이지 선택 창은 타이틀 팝업처럼 고양이 커서 대신 칸 테두리로 고른 자리를 보여 준다
+            bool showCat = row.Label != null && _page != Page.StageSelect;
             _cat.gameObject.SetActive(showCat);
             if (showCat)
             {
@@ -266,6 +307,27 @@ namespace CoffeeSpec.UI
         }
 
         // ---------------- 1단 메뉴 동작 ----------------
+
+        private List<Row> CurrentRows()
+        {
+            if (_page == Page.Main) return _mainRows;
+            if (_page == Page.StageSelect) return _stageRows;
+            return _settingRows;
+        }
+
+        private int CurrentIndex()
+        {
+            if (_page == Page.Main) return _mainIndex;
+            if (_page == Page.StageSelect) return _stageIndex;
+            return _settingIndex;
+        }
+
+        private void SetCurrentIndex(int index)
+        {
+            if (_page == Page.Main) _mainIndex = index;
+            else if (_page == Page.StageSelect) _stageIndex = index;
+            else _settingIndex = index;
+        }
 
         private void GoToTitle()
         {
@@ -313,9 +375,18 @@ namespace CoffeeSpec.UI
             RefreshSettingVisuals();
         }
 
+        // 웹 빌드는 캔버스 크기를 브라우저 창이 정하므로 해상도는 못 바꾸고 화면모드(전체화면/창모드)만 바꾼다
+// const가 아니라 readonly: 플랫폼마다 한쪽 분기가 '도달할 수 없는 코드' 경고(CS0162)로 잡히지 않게 한다
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private static readonly bool ResolutionLocked = true;
+#else
+        private static readonly bool ResolutionLocked = false;
+#endif
+        private const string LockedResolutionText = "창 크기에 맞춤";
+
         private void ChangeResolution(int dir)
         {
-            if (_resolutions.Count == 0) return;
+            if (ResolutionLocked || _resolutions.Count == 0) return;
             _pendingResolution = Mathf.Clamp(_pendingResolution + dir, 0, _resolutions.Count - 1);
             RefreshSettingVisuals();
         }
@@ -347,7 +418,11 @@ namespace CoffeeSpec.UI
             _sfxSlider.Refresh(GameSettings.SfxVolume, _settingIndex == 1 && _page == Page.Settings);
             _fullButton.Refresh(_pendingFullscreen);
             _windowButton.Refresh(!_pendingFullscreen);
-            if (_resolutions.Count > 0 && _pendingResolution >= 0)
+            if (ResolutionLocked)
+            {
+                _resolutionText.text = LockedResolutionText;
+            }
+            else if (_resolutions.Count > 0 && _pendingResolution >= 0)
             {
                 var size = _resolutions[_pendingResolution];
                 _resolutionText.text = $"{size.x} × {size.y}";
@@ -386,6 +461,7 @@ namespace CoffeeSpec.UI
 
             BuildMainPanel(canvasGo.transform);
             BuildSettingsPanel(canvasGo.transform);
+            BuildStageSelectPanel(canvasGo.transform);
 
             _cat = NewImage("CatCursor", canvasGo.transform, _catFrames.Length > 0 ? _catFrames[0] : null, Color.white);
             _cat.preserveAspect = true;
@@ -400,9 +476,9 @@ namespace CoffeeSpec.UI
 
         private void BuildMainPanel(Transform parent)
         {
-            _mainPanel = BuildPanel(parent, "MainPanel", new Vector2(640f, 520f), "PAUSED");
-            string[] labels = { "설정", "메인화면", "게임종료" };
-            Action[] actions = { () => SetPage(Page.Settings), GoToTitle, QuitGame };
+            _mainPanel = BuildPanel(parent, "MainPanel", new Vector2(640f, 640f), "PAUSED");
+            string[] labels = { "설정", "스테이지 선택", "메인화면", "게임종료" };
+            Action[] actions = { () => SetPage(Page.Settings), OpenStageSelect, GoToTitle, QuitGame };
             for (int i = 0; i < labels.Length; i++)
             {
                 var row = NewRow(_mainPanel.transform, i, new Vector2(560f, 92f), -150f - i * 120f, _mainRows, true);
@@ -410,8 +486,216 @@ namespace CoffeeSpec.UI
                 Place(row.Label.rectTransform, new Vector2(140f, 0f), new Vector2(380f, 80f));
                 row.Submit = actions[i];
             }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            // 브라우저에서는 게임을 끌 수 없으므로 게임종료 줄을 막는다
+            var quitRow = _mainRows[_mainRows.Count - 1];
+            quitRow.Submit = null;
+            quitRow.Disabled = true;
+            quitRow.Label.color = HintColor;
+#endif
         }
 
+        private void OpenStageSelect()
+        {
+            EnsureBuilt();
+            RefreshStageCards();
+            _stageIndex = 0;
+            if (StageScenes.TryGetStageNumber(SceneManager.GetActiveScene().name, out int current))
+            {
+                int i = current - 1;
+                if (i >= 0 && i < _stageRows.Count && !_stageRows[i].Disabled)
+                    _stageIndex = i;
+            }
+            SetPage(Page.StageSelect);
+        }
+
+        private void LoadSelectedStage(int stageNumber)
+        {
+            if (SceneFader.IsLoading) return;
+            SetPage(Page.Closed);
+            Time.timeScale = 1f;
+            SceneFader.LoadScene(StageScenes.GetSceneName(stageNumber));
+        }
+
+        private void RefreshStageCards()
+        {
+            int count = _stageRows.Count;
+            SaveData save = SaveDataStore.Load();
+            int unlocked = GetUnlockedStageCount(save, count);
+            for (int i = 0; i < count; i++)
+            {
+                bool on = i < unlocked;
+                var row = _stageRows[i];
+                row.Disabled = !on;
+                int stageNumber = i + 1;
+                row.Submit = on ? () => LoadSelectedStage(stageNumber) : (Action)null;
+                if (row.Card != null) row.Card.color = on ? StageCardColor : Color.black;
+                if (row.Thumb != null) row.Thumb.SetActive(on);
+            }
+        }
+
+        // 타이틀의 스테이지 선택과 같은 해제 규칙. 세이브가 없으면 1만, 전부 클리어면 전부, 아니면 가장 높이 깬 스테이지의 다음까지.
+        private static int GetUnlockedStageCount(SaveData save, int stageCount)
+        {
+            if (stageCount <= 0) return 0;
+            if (save == null) return 1;
+            if (save.HighestClearedStage >= stageCount) return stageCount;
+            return Mathf.Clamp(save.HighestClearedStage + 1, 1, stageCount);
+        }
+
+        private static int CountBuiltStages()
+        {
+            int max = 0;
+            int n = SceneManager.sceneCountInBuildSettings;
+            for (int i = 0; i < n; i++)
+            {
+                string path = SceneUtility.GetScenePathByBuildIndex(i);
+                string name = System.IO.Path.GetFileNameWithoutExtension(path);
+                if (StageScenes.TryGetStageNumber(name, out int number) && number > max)
+                    max = number;
+            }
+            return max > 0 ? max : 5;
+        }
+
+        // 타이틀의 스테이지 선택 팝업과 같은 배치·색. 그림(썸네일)은 에디터나 이미 메모리에 있을 때만 넣고, 없으면 문구만 보여 준다.
+        private void BuildStageSelectPanel(Transform parent)
+        {
+            int stageCount = CountBuiltStages();
+            const float cardW = 308f;
+            const float cardH = 252f;
+            const float gap = 30f;
+            const float padX = 45f;
+            const float titleBarH = 78.4f;
+            float width = padX * 2f + stageCount * cardW + Mathf.Max(0, stageCount - 1) * gap;
+
+            var panelImage = NewImage("StageSelectPanel", parent, _roundFill, StageWindowColor);
+            panelImage.type = Image.Type.Sliced;
+            panelImage.pixelsPerUnitMultiplier = 0.6f;
+            _stagePanel = panelImage.gameObject;
+            var rect = panelImage.rectTransform;
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(width, 490f);
+
+            var edge = NewImage("Edge", rect, _roundEdge, StageOutlineColor);
+            edge.type = Image.Type.Sliced;
+            edge.pixelsPerUnitMultiplier = 0.6f;
+            edge.raycastTarget = false;
+            Stretch(edge.rectTransform);
+
+            var titleBar = NewImage("TitleBar", rect, _roundFill, StageTitleBarColor);
+            titleBar.type = Image.Type.Sliced;
+            titleBar.pixelsPerUnitMultiplier = 0.6f;
+            titleBar.raycastTarget = false;
+            var titleBarRect = titleBar.rectTransform;
+            titleBarRect.anchorMin = new Vector2(0f, 1f);
+            titleBarRect.anchorMax = new Vector2(1f, 1f);
+            titleBarRect.pivot = new Vector2(0.5f, 1f);
+            titleBarRect.anchoredPosition = Vector2.zero;
+            titleBarRect.sizeDelta = new Vector2(0f, titleBarH);
+
+            var title = NewText("Title", titleBarRect, "SelectStage.cs", 39f, StageLabelColor, TextAlignmentOptions.MidlineLeft);
+            title.rectTransform.anchorMin = Vector2.zero;
+            title.rectTransform.anchorMax = Vector2.one;
+            title.rectTransform.offsetMin = new Vector2(32f, 0f);
+            title.rectTransform.offsetMax = new Vector2(-90f, 0f);
+            title.raycastTarget = false;
+
+            var close = NewText("Close", titleBarRect, "\u00D7", 48f, StageCloseColor, TextAlignmentOptions.Center);
+            close.rectTransform.anchorMin = close.rectTransform.anchorMax = new Vector2(1f, 0.5f);
+            close.rectTransform.pivot = new Vector2(1f, 0.5f);
+            close.rectTransform.anchoredPosition = new Vector2(-5.6f, 0f);
+            close.rectTransform.sizeDelta = new Vector2(titleBarH, titleBarH);
+            AddClick(close.gameObject, () => SetPage(Page.Main));
+
+            var body = new GameObject("Body", typeof(RectTransform));
+            var bodyRect = (RectTransform)body.transform;
+            bodyRect.SetParent(rect, false);
+            bodyRect.anchorMin = Vector2.zero;
+            bodyRect.anchorMax = Vector2.one;
+            bodyRect.pivot = new Vector2(0.5f, 0.5f);
+            bodyRect.offsetMin = Vector2.zero;
+            bodyRect.offsetMax = new Vector2(0f, -titleBarH);
+
+            for (int i = 0; i < stageCount; i++)
+            {
+                int stageNumber = i + 1;
+                var card = NewImage("Stage" + stageNumber, bodyRect, _roundFill, StageCardColor);
+                card.type = Image.Type.Sliced;
+                card.pixelsPerUnitMultiplier = 1f;
+                var cardRect = card.rectTransform;
+                cardRect.anchorMin = cardRect.anchorMax = new Vector2(0f, 1f);
+                cardRect.pivot = new Vector2(0f, 1f);
+                cardRect.anchoredPosition = new Vector2(padX + i * (cardW + gap), -33.6f);
+                cardRect.sizeDelta = new Vector2(cardW, cardH);
+
+                var highlight = NewImage("Highlight", cardRect, _roundEdge, AccentColor);
+                highlight.type = Image.Type.Sliced;
+                highlight.pixelsPerUnitMultiplier = 1f;
+                highlight.raycastTarget = false;
+                highlight.enabled = false;
+                Stretch(highlight.rectTransform);
+
+                Sprite thumbSprite = LoadStageThumb(stageNumber);
+                GameObject thumbGo = null;
+                if (thumbSprite != null)
+                {
+                    var thumb = NewImage("Thumb", cardRect, thumbSprite, Color.white);
+                    thumb.preserveAspect = true;
+                    thumb.raycastTarget = false;
+                    var thumbRect = thumb.rectTransform;
+                    thumbRect.anchorMin = new Vector2(0f, 1f);
+                    thumbRect.anchorMax = new Vector2(1f, 1f);
+                    thumbRect.pivot = new Vector2(0.5f, 1f);
+                    thumbRect.anchoredPosition = new Vector2(0f, -11.2f);
+                    thumbRect.sizeDelta = new Vector2(-22.4f, 120.4f);
+                    thumbGo = thumb.gameObject;
+                }
+
+                var label = NewText("Label", cardRect, "LoadStage(" + stageNumber + ");", 36f, StageLabelColor, TextAlignmentOptions.Bottom);
+                label.rectTransform.anchorMin = Vector2.zero;
+                label.rectTransform.anchorMax = Vector2.one;
+                label.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                label.rectTransform.anchoredPosition = new Vector2(0f, -58.8f);
+                label.rectTransform.sizeDelta = new Vector2(0f, -156.8f);
+                label.raycastTarget = false;
+
+                var row = new Row
+                {
+                    Rect = cardRect,
+                    Highlight = highlight,
+                    Label = label,
+                    Card = card,
+                    Thumb = thumbGo,
+                    Submit = () => LoadSelectedStage(stageNumber)
+                };
+                _stageRows.Add(row);
+                AddHover(card.gameObject, () => Select(_stageRows.IndexOf(row)), () => row.Submit?.Invoke());
+            }
+
+            var back = NewText("Back", rect, "ESC 뒤로", 28f, HintColor, TextAlignmentOptions.MidlineLeft);
+            back.rectTransform.anchorMin = back.rectTransform.anchorMax = new Vector2(0f, 0f);
+            back.rectTransform.pivot = new Vector2(0f, 0f);
+            back.rectTransform.anchoredPosition = new Vector2(48f, 16f);
+            back.rectTransform.sizeDelta = new Vector2(200f, 48f);
+            AddClick(back.gameObject, () => SetPage(Page.Main));
+        }
+
+        private static Sprite LoadStageThumb(int stageNumber)
+        {
+            // Resources의 StageThumbnails 에셋이 섬네일을 직접 참조한다. 빌드에서도 확실히 불러와진다
+            var fromLibrary = StageThumbnails.Get(stageNumber);
+            if (fromLibrary != null) return fromLibrary;
+            string spriteName = "Thumb_Stage" + stageNumber;
+#if UNITY_EDITOR
+            var fromAsset = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/_Project/Sprite/UI/" + spriteName + ".png");
+            if (fromAsset != null) return fromAsset;
+#endif
+            foreach (var sprite in Resources.FindObjectsOfTypeAll<Sprite>())
+            {
+                if (sprite != null && sprite.name == spriteName) return sprite;
+            }
+            return null;
+        }
         private void BuildSettingsPanel(Transform parent)
         {
             _settingsPanel = BuildPanel(parent, "SettingsPanel", new Vector2(1000f, 680f), "SETTINGS");
@@ -426,8 +710,9 @@ namespace CoffeeSpec.UI
             // 볼륨: 좌우 키 5%씩, 마우스로 잡고 끌기. 움직이는 즉시 소리에 반영하고 저장한다
             _bgmSlider = new VolumeSlider(this, _settingRows[0].Rect, GameSettings.SetBgmVolume);
             _settingRows[0].Adjust = d => GameSettings.SetBgmVolume(GameSettings.BgmVolume + d * VolumeStep);
-            _sfxSlider = new VolumeSlider(this, _settingRows[1].Rect, GameSettings.SetSfxVolume);
-            _settingRows[1].Adjust = d => GameSettings.SetSfxVolume(GameSettings.SfxVolume + d * VolumeStep);
+            // 효과음은 바꾸는 순간 고양이 울음소리로 바뀐 크기를 들려 준다
+            _sfxSlider = new VolumeSlider(this, _settingRows[1].Rect, v => { GameSettings.SetSfxVolume(v); CatSfx.PlayPreview(); });
+            _settingRows[1].Adjust = d => { GameSettings.SetSfxVolume(GameSettings.SfxVolume + d * VolumeStep); CatSfx.PlayPreview(); };
             GameSettings.VolumeChanged += RefreshSettingVisuals;
 
             // 화면모드: 두 버튼 중 하나. 좌우 키로 바꾸고 적용을 눌러야 실제로 바뀐다
@@ -447,6 +732,14 @@ namespace CoffeeSpec.UI
             Place(rightArrow.rectTransform, new Vector2(760f, 0f), new Vector2(60f, 70f));
             AddClick(rightArrow.gameObject, () => { Select(3); ChangeResolution(1); });
             _settingRows[3].Adjust = ChangeResolution;
+            if (ResolutionLocked)
+            {
+                // 화살표를 숨기고 줄을 흐리게 해서 바꿀 수 없다는 걸 보여 준다
+                leftArrow.gameObject.SetActive(false);
+                rightArrow.gameObject.SetActive(false);
+                _settingRows[3].Label.color = HintColor;
+                _resolutionText.color = HintColor;
+            }
 
             // 아래쪽: 왼쪽 'ESC 뒤로'(클릭해도 뒤로), 오른쪽 '적용' 버튼(키보드로는 마지막 줄)
             var panelRect = (RectTransform)_settingsPanel.transform;

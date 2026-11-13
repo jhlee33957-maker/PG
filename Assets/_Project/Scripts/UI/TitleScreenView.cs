@@ -22,10 +22,10 @@ namespace CoffeeSpec.UI
     {
         [Header("제목")]
         [Tooltip("게임 제목. 주석 줄 위에 크게 표시된다")]
-        [SerializeField] private string _gameTitle = "Coffee Spec";
+        [SerializeField] private string _gameTitle = "Cat Script";
         [SerializeField] private TMP_Text _titleText;
         [Tooltip("제목 앞에 붙는 주석 기호")]
-        [SerializeField] private string _titlePrefix = "// ";
+        [SerializeField] private string _titlePrefix = "//";
         [SerializeField] private Color _titlePrefixColor = new Color32(0x4E, 0xC9, 0xB0, 0xFF);
 
         [Header("주석 줄 (위에서부터)")]
