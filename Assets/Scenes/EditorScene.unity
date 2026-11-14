@@ -223,7 +223,7 @@ MonoBehaviour:
   _flyHeights:
   - word:
       _value: Pigeon
-    height: 10
+    height: 3.5
 --- !u!1 &1511495578
 GameObject:
   m_ObjectHideFlags: 0

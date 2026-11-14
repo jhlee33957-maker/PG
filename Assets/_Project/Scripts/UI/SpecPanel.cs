@@ -69,7 +69,7 @@ namespace CoffeeSpec.UI
         [SerializeField] private Button _btnRetry;
 
         [Header("스테이지 보기")]
-        [Tooltip("미리보기 버튼 (Button_PreView). 기획서를 접고 펼친다. 접으면 레벨을 초기화하고 규칙이 하나도 없는 상태로 시간이 흐르며, 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
+        [Tooltip("미리보기 버튼 (Button_PreView). 기획서를 접고 펼친다. 접으면 레벨을 초기화하고 고정 단어로만 채워진 문장만 적용한 상태로 시간이 흐르며, 스테이지를 드래그로 둘러볼 수 있다. 접힌 동안에도 보여야 하므로 Document Root의 자식이면 안 된다")]
         [SerializeField] private Button _btnPreview;
         [Tooltip("리셋 버튼 (BTN_Reset, 미리보기 버튼 왼쪽). 고정 단어를 뺀 모든 단어를 하단 단어 바로 돌려보낸다. 본문이 펼쳐져 있을 때만 보인다")]
         [SerializeField] private Button _btnReset;
@@ -193,6 +193,14 @@ namespace CoffeeSpec.UI
         // 끌기 상태
         private int _dragOption = -1;      // 끌고 있는 단어. 없으면 -1
         private int _dragFromBlank = -1;   // 빈칸에서 끌기 시작했으면 그 빈칸, 단어 바에서 시작했으면 -1
+        private bool _dragFromBar;         // 하단 단어 바에서 집어 들었는지
+        private bool _dragFromFree;        // 화면 위에 놓인 칩에서 집어 들었는지
+        private int _dragOriginSibling = -1;       // 바에 있던 자리
+        private Vector2 _dragOriginLocalPoint;     // 화면 층에 있던 좌표
+        private bool _documentDimmed;
+        private Color _documentColor;
+        private Color _lineNumberColorStored;
+        private CanvasGroup _boxLayerGroup;
         private int _hoverBlank = -1;      // 끌고 있는 단어 아래의 빈칸
         private RectTransform _dragGhost;  // 마우스를 따라다니는 단어 칩
         private TextMeshProUGUI _dragGhostText;
@@ -253,6 +261,25 @@ namespace CoffeeSpec.UI
             {
                 SetStageView(false);
             }
+
+            // 기획서가 펼쳐진 동안 B키는 Build 버튼과 같다. 미리보기·일시정지·입력란 편집 중에는 누르지 않은 것과 같다
+            if (IsOpen && !IsViewingStage && !PauseMenu.IsOpen
+                && Keyboard.current != null && Keyboard.current.bKey.wasPressedThisFrame
+                && !IsTypingInInputField())
+            {
+                OnClickBuild();
+            }
+        }
+
+        private static bool IsTypingInInputField()
+        {
+            GameObject selected = EventSystem.current != null ? EventSystem.current.currentSelectedGameObject : null;
+            if (selected == null)
+            {
+                return false;
+            }
+            return selected.GetComponent<TMP_InputField>() != null
+                || selected.GetComponent<InputField>() != null;
         }
 
         private void OnDestroy()
@@ -270,7 +297,8 @@ namespace CoffeeSpec.UI
         /// <summary>
         /// 탭과 파일 목록의 글자를 지금 스테이지에 맞춘다. 프리팹은 Stage1 기준으로 만들어져 있어서
         /// 씬 이름(Stage2Scene 등)에서 번호를 읽어 실행 중에 바꾼다. 씬마다 따로 설정할 필요가 없게 하려는 것.
-        /// 파일 목록은 1부터 (접힌 폴더 수 + 1)번까지 순서대로 보이고, 지금 스테이지만 펼쳐진다.
+        /// 파일 목록은 1부터 빌드에 들어 있는 마지막 스테이지까지 순서대로 보이고, 지금 스테이지만 펼쳐진다.
+        /// 접힌 폴더 줄이 모자라면 있는 줄을 복제해서 채운다.
         /// </summary>
         private void ApplyStageLabels()
         {
@@ -298,7 +326,14 @@ namespace CoffeeSpec.UI
                 return;
             }
 
-            // 접힌 폴더에 넣을 번호: 지금 스테이지를 뺀 나머지를 1부터 차례로
+            // 접힌 폴더에 넣을 번호: 지금 스테이지를 뺀 1..마지막 스테이지
+            int totalStages = StageScenes.CountInBuildSettings();
+            if (totalStages < stage)
+            {
+                totalStages = stage;
+            }
+            EnsureOtherStageRows(Mathf.Max(0, totalStages - 1));
+
             int otherCount = _otherStageRows != null ? _otherStageRows.Length : 0;
             var otherNumbers = new List<int>(otherCount);
             for (int n = 1; otherNumbers.Count < otherCount; n++)
@@ -363,6 +398,44 @@ namespace CoffeeSpec.UI
                     label.text = $"Stage{otherNumbers[i]}";
                 }
             }
+        }
+
+        /// <summary>
+        /// 접힌 스테이지 폴더 줄이 needed개보다 적으면, 있는 줄 하나를 복사해 같은 목록에 붙인다.
+        /// 프리팹이 예전 스테이지 수(4개) 기준으로 만들어져 있어도 5스테이지까지 보이게 하려는 것.
+        /// </summary>
+        private void EnsureOtherStageRows(int needed)
+        {
+            var rows = new List<RectTransform>();
+            if (_otherStageRows != null)
+            {
+                for (int i = 0; i < _otherStageRows.Length; i++)
+                {
+                    if (_otherStageRows[i] != null)
+                    {
+                        rows.Add(_otherStageRows[i]);
+                    }
+                }
+            }
+
+            if (rows.Count == 0 || rows.Count >= needed)
+            {
+                if (rows.Count != (_otherStageRows != null ? _otherStageRows.Length : 0))
+                {
+                    _otherStageRows = rows.ToArray();
+                }
+                return;
+            }
+
+            RectTransform template = rows[0];
+            Transform parent = template.parent;
+            while (rows.Count < needed)
+            {
+                RectTransform clone = Instantiate(template, parent);
+                clone.name = template.name;
+                rows.Add(clone);
+            }
+            _otherStageRows = rows.ToArray();
         }
 
         // ---------------- 바깥에서 부르는 함수 ----------------
@@ -682,7 +755,7 @@ namespace CoffeeSpec.UI
 
         /// <summary>
         /// 기획서를 연 채 본문과 단어 바만 접어서 스테이지를 미리 본다.
-        /// 접을 때 레벨을 초기화하고 아무 문장도 적용하지 않은 원래 상태로 시간을 흐르게 한다 (플레이어 조작은 계속 막힘).
+        /// 접을 때 레벨을 초기화하고 고정(체크) 단어로만 채워진 문장만 적용한 상태로 시간을 흐르게 한다 (플레이어 조작은 계속 막힘).
         /// 다시 펼치면 그 상태 그대로 시간만 멈춘다. 고른 단어는 그대로 남는다.
         /// </summary>
         private void SetStageView(bool viewing)
@@ -707,8 +780,8 @@ namespace CoffeeSpec.UI
             if (viewing)
             {
                 Time.timeScale = 1f;
-                // 고른 문장이 아니라 규칙이 하나도 없는 상태를 보여 준다
-                PreviewStarted?.Invoke(Array.Empty<Sentence>());
+                // 플레이어가 고른 문장은 빼고, 단어가 모두 고정(체크)된 문장만 적용한 상태를 보여 준다
+                PreviewStarted?.Invoke(CollectLockedSentences());
             }
             else
             {
@@ -858,6 +931,26 @@ namespace CoffeeSpec.UI
             _dragOption = optionIndex;
             _dragFromBlank = fromBlank;
             _hoverBlank = -1;
+            _dragFromBar = false;
+            _dragFromFree = false;
+            _dragOriginSibling = -1;
+            _dragOriginLocalPoint = Vector2.zero;
+
+            // 놓은 자리에 있던 단어를, 집어 든 단어가 있던 자리로 보내기 위해 출발점을 기억한다
+            if (fromBlank < 0 && optionIndex >= 0 && optionIndex < _optionButtons.Count)
+            {
+                var origin = (RectTransform)_optionButtons[optionIndex].transform;
+                if (origin.parent == _optionContainer)
+                {
+                    _dragFromBar = true;
+                    _dragOriginSibling = origin.GetSiblingIndex();
+                }
+                else if (_wordLayer != null && origin.parent == _wordLayer)
+                {
+                    _dragFromFree = true;
+                    _dragOriginLocalPoint = origin.localPosition;
+                }
+            }
 
             EnsureDragGhost();
             _dragGhostText.text = WordTags.DisplayName(_spec.WordPool[optionIndex]);
@@ -870,6 +963,7 @@ namespace CoffeeSpec.UI
             _dragGhost.sizeDelta = new Vector2(textSize.x + 32f, textSize.y + 14f);
             _dragGhost.gameObject.SetActive(true);
             _dragGhost.SetAsLastSibling();
+            SetDocumentDimmed(true);
             MoveDragGhost(eventData);
         }
 
@@ -903,6 +997,10 @@ namespace CoffeeSpec.UI
 
             int option = _dragOption;
             int fromBlank = _dragFromBlank;
+            bool fromBar = _dragFromBar;
+            bool fromFree = _dragFromFree;
+            int originSibling = _dragOriginSibling;
+            Vector2 originLocal = _dragOriginLocalPoint;
             int targetBlank = FindBlankAt(eventData.position, eventData.pressEventCamera);
             Vector3 dropWorld = _dragGhost.position; // 마우스를 따라오던 칩이 보이던 자리
             CancelDrag();
@@ -927,11 +1025,19 @@ namespace CoffeeSpec.UI
                     int displaced = _blankToOption[targetBlank];
                     AssignOption(targetBlank, option);
 
-                    // 바깥 칩을 단어가 든 빈칸에 놓으면 원래 단어는 하단 단어 바로 돌아간다
-                    // (빈칸끼리 옮긴 경우에는 서로 자리를 바꾸므로 밀려나는 단어가 없다)
+                    // 이미 단어가 있는 빈칸에 놓으면, 들어 있던 단어는 집어 든 단어의 원래 자리로 간다.
+                    // 빈칸끼리면 AssignOption이 자리를 바꾸고, 바·화면 칩에서 왔으면 그 자리로 보낸다.
+                    // 고정 빈칸은 위에서 이미 걸렀다.
                     if (fromBlank < 0 && displaced >= 0)
                     {
-                        ReturnToBar(displaced);
+                        if (fromFree)
+                        {
+                            PlaceWord(displaced, originLocal);
+                        }
+                        else
+                        {
+                            ReturnToBar(displaced, fromBar ? originSibling : -1);
+                        }
                     }
                 }
             }
@@ -957,10 +1063,57 @@ namespace CoffeeSpec.UI
             {
                 _dragGhost.gameObject.SetActive(false);
             }
+            SetDocumentDimmed(false);
         }
 
         /// <summary>
-        /// 마우스를 따라다닐 단어 칩을 처음 한 번 만든다. 어두운 배경에서도 잘 보이도록 배경·테두리를 갖춘 칩 모양이다.
+        /// 단어를 문장 위에 끌고 있는 동안 본문만 살짝 옅게 해서, 칩이 칸을 지워버리지 않고도 또렷이 보이게 한다.
+        /// </summary>
+        private void SetDocumentDimmed(bool dimmed)
+        {
+            if (_documentDimmed == dimmed)
+            {
+                return;
+            }
+
+            if (!_documentDimmed)
+            {
+                if (_documentText != null) _documentColor = _documentText.color;
+                if (_lineNumberText != null) _lineNumberColorStored = _lineNumberText.color;
+            }
+
+            _documentDimmed = dimmed;
+            float alpha = dimmed ? 0.45f : 1f;
+
+            if (_documentText != null)
+            {
+                Color color = _documentColor;
+                color.a = _documentColor.a * alpha;
+                _documentText.color = color;
+            }
+            if (_lineNumberText != null)
+            {
+                Color color = _lineNumberColorStored;
+                color.a = _lineNumberColorStored.a * alpha;
+                _lineNumberText.color = color;
+            }
+            if (_boxLayer != null)
+            {
+                if (_boxLayerGroup == null)
+                {
+                    _boxLayerGroup = _boxLayer.GetComponent<CanvasGroup>();
+                    if (_boxLayerGroup == null)
+                    {
+                        _boxLayerGroup = _boxLayer.gameObject.AddComponent<CanvasGroup>();
+                    }
+                }
+                _boxLayerGroup.alpha = alpha;
+                _boxLayerGroup.blocksRaycasts = false;
+            }
+        }
+
+        /// <summary>
+        /// 마우스를 따라다닐 단어 칩을 처음 한 번 만든다. 문장 레이아웃이 비치도록 반투명 바탕과 얕은 그림자를 쓴다.
         /// 클릭을 가로채지 않도록 입력은 받지 않는다.
         /// </summary>
         private void EnsureDragGhost()
@@ -974,9 +1127,21 @@ namespace CoffeeSpec.UI
             ghostObject.transform.SetParent(_documentText.canvas.rootCanvas.transform, false);
             _dragGhost = (RectTransform)ghostObject.transform;
 
+            var ghostCanvas = ghostObject.AddComponent<Canvas>();
+            ghostCanvas.overrideSorting = true;
+            ghostCanvas.sortingOrder = 120; // 문장·자유 칩보다 항상 위
+
+            Image shadow = CreateChildImage(_dragGhost, "Shadow", _boxSprite);
+            var shadowRect = (RectTransform)shadow.transform;
+            shadowRect.offsetMin = new Vector2(3f, -4f);
+            shadowRect.offsetMax = new Vector2(3f, -4f);
+            shadow.color = new Color(0f, 0f, 0f, 0.28f);
+
             Image background = ghostObject.AddComponent<Image>();
             ApplySprite(background, _boxSprite);
-            background.color = _dragChipColor;
+            Color plate = _dragChipColor;
+            plate.a = 0.72f; // 문장 레이아웃이 비치도록 반투명
+            background.color = plate;
             background.raycastTarget = false;
 
             if (_boxOutlineSprite != null)
@@ -1196,6 +1361,11 @@ namespace CoffeeSpec.UI
             _wordLayer.SetParent(_documentText.canvas.rootCanvas.transform, false);
             StretchFull(_wordLayer);
             _wordLayer.SetAsLastSibling();
+            // 기획서 본문보다 위에 그려지게 해서, 문장 위에 놓은 칩이 글자에 가리지 않게 한다
+            var layerCanvas = layerObject.AddComponent<Canvas>();
+            layerCanvas.overrideSorting = true;
+            layerCanvas.sortingOrder = 80;
+            layerObject.AddComponent<UnityEngine.UI.GraphicRaycaster>();
             layerObject.SetActive(false);
         }
 
@@ -1214,13 +1384,15 @@ namespace CoffeeSpec.UI
                 rect.sizeDelta = size;
             }
             rect.localPosition = ClampToLayer(localPoint, rect.rect.size);
+            _optionButtons[option].SetOverlapStyle(_boxSprite, _dragChipColor, _dragChipTextColor, true);
         }
 
-        /// <summary>칩을 하단 단어 바로 되돌린다. 바 안에서는 단어 묶음 순서대로 자리를 찾아 들어간다.</summary>
-        private void ReturnToBar(int option)
+        /// <summary>칩을 하단 단어 바로 되돌린다. 바 안에서는 단어 묶음 순서대로 자리를 찾아 들어간다.
+        /// preferredSibling이 0 이상이면 그 자리에 넣는다 (집어 든 단어가 바에 있던 자리).</summary>
+        private void ReturnToBar(int option, int preferredSibling = -1)
         {
             var rect = (RectTransform)_optionButtons[option].transform;
-            if (rect.parent == _optionContainer)
+            if (rect.parent == _optionContainer && preferredSibling < 0)
             {
                 return;
             }
@@ -1234,8 +1406,16 @@ namespace CoffeeSpec.UI
                     siblingIndex++;
                 }
             }
-            rect.SetParent(_optionContainer, false);
-            rect.SetSiblingIndex(siblingIndex);
+            if (preferredSibling >= 0)
+            {
+                siblingIndex = preferredSibling;
+            }
+            if (rect.parent != _optionContainer)
+            {
+                rect.SetParent(_optionContainer, false);
+            }
+            rect.SetSiblingIndex(Mathf.Clamp(siblingIndex, 0, rect.parent.childCount - 1));
+            _optionButtons[option].SetOverlapStyle(_boxSprite, _dragChipColor, _dragChipTextColor, false);
         }
 
         private Vector2 ClampToLayer(Vector2 point, Vector2 size)
@@ -1732,6 +1912,39 @@ namespace CoffeeSpec.UI
                 if (filled)
                 {
                     sentences.Add(new Sentence(template, words));
+                }
+            }
+            return sentences;
+        }
+
+        /// <summary>미리보기용. 모든 빈칸이 고정 단어로 채워져 있고 품사가 맞는 문장만 모은다 (숨긴 문장 포함).</summary>
+        private List<Sentence> CollectLockedSentences()
+        {
+            var sentences = new List<Sentence>(_templates.Count);
+            for (int s = 0; s < _templates.Count; s++)
+            {
+                SentenceTemplate template = _templates[s];
+                var words = new List<WordId>(template.Pattern.Count);
+                bool locked = template.Pattern.Count > 0;
+                for (int slot = 0; slot < template.Pattern.Count; slot++)
+                {
+                    int blank = _blankOffsets[s] + slot;
+                    int option = _blankToOption[blank];
+                    if (option < 0 || !_lockedBlanks[blank])
+                    {
+                        locked = false;
+                        break;
+                    }
+                    words.Add(_spec.WordPool[option]);
+                }
+                if (!locked)
+                {
+                    continue;
+                }
+                var sentence = new Sentence(template, words);
+                if (sentence.IsValid())
+                {
+                    sentences.Add(sentence);
                 }
             }
             return sentences;

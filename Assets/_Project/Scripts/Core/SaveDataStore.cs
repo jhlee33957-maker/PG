@@ -28,6 +28,15 @@ namespace CoffeeSpec.Core
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, FileName);
 
+        // 웹 빌드는 파일 쓰기가 브라우저 저장소(IndexedDB)에 바로 반영되지 않고 File.Replace도 제대로 동작하지 않아,
+        // 같은 CSV 내용을 PlayerPrefs(브라우저에 바로 저장됨)에 넣는다
+#if UNITY_WEBGL && !UNITY_EDITOR
+        private const bool UsePlayerPrefs = true;
+#else
+        private const bool UsePlayerPrefs = false;
+#endif
+        private const string PrefsKey = "CoffeeSpec.SaveData";
+
         /// <summary>
         /// 세이브를 읽는다. 파일이 없거나, 읽을 수 없거나,
         /// 마지막 플레이 스테이지와 클리어 기록이 둘 다 없으면 null을 돌려준다 (= "기록 없음"으로 취급).
@@ -86,6 +95,14 @@ namespace CoffeeSpec.Core
         /// </summary>
         public static void DeleteAll()
         {
+            if (UsePlayerPrefs)
+            {
+                PlayerPrefs.DeleteKey(PrefsKey);
+                PlayerPrefs.Save();
+                Debug.Log("[SaveDataStore] 세이브 삭제 (PlayerPrefs)");
+                return;
+            }
+
             string path = FilePath;
             try
             {
@@ -111,6 +128,18 @@ namespace CoffeeSpec.Core
         // 파일 내용을 그대로 읽는다. 둘 다 0인 경우도 돌려준다 (쓰기 전에 기존 값을 합치기 위해).
         private static SaveData LoadRaw()
         {
+            if (UsePlayerPrefs)
+            {
+                if (!PlayerPrefs.HasKey(PrefsKey))
+                {
+                    return null;
+                }
+                Dictionary<string, string> prefValues = ParseKeyValues(PlayerPrefs.GetString(PrefsKey).Split('\n'));
+                TryGetInt(prefValues, KeyLastPlayedStage, out int prefLastPlayed);
+                TryGetInt(prefValues, KeyHighestClearedStage, out int prefHighestCleared);
+                return new SaveData(Mathf.Max(0, prefLastPlayed), Mathf.Max(0, prefHighestCleared));
+            }
+
             string path = FilePath;
             if (!File.Exists(path))
             {
@@ -141,6 +170,14 @@ namespace CoffeeSpec.Core
                 "Key,Value\n" +
                 $"{KeyLastPlayedStage},{save.LastPlayedStage.ToString(CultureInfo.InvariantCulture)}\n" +
                 $"{KeyHighestClearedStage},{save.HighestClearedStage.ToString(CultureInfo.InvariantCulture)}\n";
+
+            if (UsePlayerPrefs)
+            {
+                PlayerPrefs.SetString(PrefsKey, text);
+                PlayerPrefs.Save();
+                Debug.Log($"[SaveDataStore] 저장 (PlayerPrefs): LastPlayedStage={save.LastPlayedStage}, HighestClearedStage={save.HighestClearedStage}");
+                return;
+            }
 
             try
             {

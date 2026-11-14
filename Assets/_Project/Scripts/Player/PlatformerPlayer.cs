@@ -16,13 +16,13 @@ namespace CoffeeSpec.Player
     public class PlatformerPlayer : MonoBehaviour
     {
         [Header("이동")]
-        [SerializeField] private float _moveSpeed = 6f;
+        [SerializeField] private float _moveSpeed = 5.4f;
         [SerializeField] private float _groundAcceleration = 80f;
         [SerializeField] private float _airAcceleration = 50f;
 
         [Header("점프 (Z / ↑)")]
         [Tooltip("점프 시작 속도. 높이는 속도의 제곱에 비례한다")]
-        [SerializeField] private float _jumpSpeed = 10.4f;
+        [SerializeField] private float _jumpSpeed = 9.36f;
         [Tooltip("발판에서 떨어진 직후에도 점프를 받아주는 시간(초)")]
         [SerializeField] private float _coyoteTime = 0.1f;
         [Tooltip("착지 직전에 누른 점프를 기억하는 시간(초)")]
@@ -122,6 +122,7 @@ namespace CoffeeSpec.Player
             }
 
             HandleJump();
+            // 이미 닿아 있는 벽·천장 쪽으로 미는 속도만 뺀다 (점프로 넣은 위쪽 속도는 벽면을 따라가므로 그대로 둔다)
             _ruleEntity.BlockBySolids();
         }
 

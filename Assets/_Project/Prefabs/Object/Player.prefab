@@ -210,10 +210,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f46ce95a192b6134b96d179abf8af108, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CoffeeSpec.Player.PlatformerPlayer
-  _moveSpeed: 6
+  _moveSpeed: 5.4
   _groundAcceleration: 80
   _airAcceleration: 50
-  _jumpSpeed: 10.4
+  _jumpSpeed: 9.36
   _coyoteTime: 0.1
   _jumpBufferTime: 0.1
   _jumpCutMultiplier: 0.5
