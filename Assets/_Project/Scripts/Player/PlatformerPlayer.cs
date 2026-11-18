@@ -60,9 +60,9 @@ namespace CoffeeSpec.Player
         {
             var kb = Keyboard.current;
             if (kb == null) return;
-            // 기획서가 열려 있으면(미리보기로 시간이 흐르는 중 포함) 입력을 받지 않는다.
+            // 기획서가 열려 있으면(미리보기로 시간이 흐르는 중 포함) 입력을 받지 않는다. 튜토리얼의 R 안내 중에도 받지 않는다.
             // 이전 입력이 남아 계속 움직이지 않도록 입력 상태도 비운다
-            if (SpecPanel.IsAnyOpen || Time.timeScale == 0f)
+            if (SpecPanel.IsAnyOpen || TutorialDirector.BlocksPlayerInput || Time.timeScale == 0f)
             {
                 _inputX = 0f;
                 _jumpBufferTimer = 0f;

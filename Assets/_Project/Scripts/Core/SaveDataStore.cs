@@ -16,6 +16,7 @@ namespace CoffeeSpec.Core
     ///   Key,Value
     ///   LastPlayedStage,2
     ///   HighestClearedStage,1
+    ///   TutorialDone,1          (Stage1 첫 플레이 튜토리얼을 끝냈으면 1)
     ///
     /// 언제 무엇을 기록하는지는 docs/decisions/003-save-data-and-stage-unlock.md의 "세이브를 쓰는 쪽이 지킬 규칙".
     /// </summary>
@@ -25,6 +26,7 @@ namespace CoffeeSpec.Core
 
         private const string KeyLastPlayedStage = "LastPlayedStage";
         private const string KeyHighestClearedStage = "HighestClearedStage";
+        private const string KeyTutorialDone = "TutorialDone";
 
         public static string FilePath => Path.Combine(Application.persistentDataPath, FileName);
 
@@ -90,8 +92,26 @@ namespace CoffeeSpec.Core
         }
 
         /// <summary>
+        /// Stage1 튜토리얼을 끝냈는지. Load()의 "기록 없음" 판단과 상관없이 파일 값을 그대로 본다.
+        /// </summary>
+        public static bool IsTutorialDone()
+        {
+            Dictionary<string, string> values = ReadValues();
+            return values != null && TryGetInt(values, KeyTutorialDone, out int done) && done == 1;
+        }
+
+        /// <summary>Stage1 튜토리얼을 끝냈을 때: TutorialDone을 1로 기록한다. 다른 값은 그대로 둔다.</summary>
+        public static void RecordTutorialDone()
+        {
+            Dictionary<string, string> values = ReadValues() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            values[KeyTutorialDone] = "1";
+            WriteValues(values, "TutorialDone=1");
+        }
+
+        /// <summary>
         /// 새 게임: 플레이 기록과 클리어 기록을 모두 지운다 (세이브 파일 삭제 = "기록 없음").
         /// 값을 0으로 쓰지 않고 파일을 지우는 이유는, Load가 이미 "파일 없음"을 기록 없음으로 다루기 때문이다.
+        /// 튜토리얼 완료(TutorialDone)도 같이 지워지므로 새 게임에서는 튜토리얼이 다시 나온다.
         /// </summary>
         public static void DeleteAll()
         {
@@ -128,16 +148,28 @@ namespace CoffeeSpec.Core
         // 파일 내용을 그대로 읽는다. 둘 다 0인 경우도 돌려준다 (쓰기 전에 기존 값을 합치기 위해).
         private static SaveData LoadRaw()
         {
+            Dictionary<string, string> values = ReadValues();
+            if (values == null)
+            {
+                return null;
+            }
+
+            // 값이 없거나 숫자가 아니면 0으로 본다
+            TryGetInt(values, KeyLastPlayedStage, out int lastPlayed);
+            TryGetInt(values, KeyHighestClearedStage, out int highestCleared);
+            return new SaveData(Mathf.Max(0, lastPlayed), Mathf.Max(0, highestCleared));
+        }
+
+        // 세이브의 Key,Value를 모두 읽는다. 파일(웹은 PlayerPrefs)이 없거나 읽을 수 없으면 null
+        private static Dictionary<string, string> ReadValues()
+        {
             if (UsePlayerPrefs)
             {
                 if (!PlayerPrefs.HasKey(PrefsKey))
                 {
                     return null;
                 }
-                Dictionary<string, string> prefValues = ParseKeyValues(PlayerPrefs.GetString(PrefsKey).Split('\n'));
-                TryGetInt(prefValues, KeyLastPlayedStage, out int prefLastPlayed);
-                TryGetInt(prefValues, KeyHighestClearedStage, out int prefHighestCleared);
-                return new SaveData(Mathf.Max(0, prefLastPlayed), Mathf.Max(0, prefHighestCleared));
+                return ParseKeyValues(PlayerPrefs.GetString(PrefsKey).Split('\n'));
             }
 
             string path = FilePath;
@@ -148,12 +180,7 @@ namespace CoffeeSpec.Core
 
             try
             {
-                Dictionary<string, string> values = ParseKeyValues(File.ReadAllLines(path));
-
-                // 값이 없거나 숫자가 아니면 0으로 본다
-                TryGetInt(values, KeyLastPlayedStage, out int lastPlayed);
-                TryGetInt(values, KeyHighestClearedStage, out int highestCleared);
-                return new SaveData(Mathf.Max(0, lastPlayed), Mathf.Max(0, highestCleared));
+                return ParseKeyValues(File.ReadAllLines(path));
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
@@ -162,20 +189,46 @@ namespace CoffeeSpec.Core
             }
         }
 
+        // 두 스테이지 값만 바꾸고, 파일에 있던 다른 키(TutorialDone 등)는 그대로 남긴다
         private static void Write(SaveData save)
+        {
+            Dictionary<string, string> values = ReadValues() ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            values[KeyLastPlayedStage] = save.LastPlayedStage.ToString(CultureInfo.InvariantCulture);
+            values[KeyHighestClearedStage] = save.HighestClearedStage.ToString(CultureInfo.InvariantCulture);
+            WriteValues(values, $"LastPlayedStage={save.LastPlayedStage}, HighestClearedStage={save.HighestClearedStage}");
+        }
+
+        private static void WriteValues(Dictionary<string, string> values, string logSummary)
         {
             string path = FilePath;
             string tempPath = path + ".tmp";
-            string text =
-                "Key,Value\n" +
-                $"{KeyLastPlayedStage},{save.LastPlayedStage.ToString(CultureInfo.InvariantCulture)}\n" +
-                $"{KeyHighestClearedStage},{save.HighestClearedStage.ToString(CultureInfo.InvariantCulture)}\n";
+
+            // 두 스테이지 값을 항상 먼저 쓰고, 나머지 키는 그 뒤에 쓴다
+            var builder = new System.Text.StringBuilder("Key,Value\n");
+            foreach (string key in new[] { KeyLastPlayedStage, KeyHighestClearedStage })
+            {
+                if (values.TryGetValue(key, out string value))
+                {
+                    builder.Append(key).Append(',').Append(value).Append('\n');
+                }
+            }
+            foreach (KeyValuePair<string, string> pair in values)
+            {
+                if (string.Equals(pair.Key, KeyLastPlayedStage, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key, KeyHighestClearedStage, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key, "Key", StringComparison.OrdinalIgnoreCase))   // 헤더 줄
+                {
+                    continue;
+                }
+                builder.Append(pair.Key).Append(',').Append(pair.Value).Append('\n');
+            }
+            string text = builder.ToString();
 
             if (UsePlayerPrefs)
             {
                 PlayerPrefs.SetString(PrefsKey, text);
                 PlayerPrefs.Save();
-                Debug.Log($"[SaveDataStore] 저장 (PlayerPrefs): LastPlayedStage={save.LastPlayedStage}, HighestClearedStage={save.HighestClearedStage}");
+                Debug.Log($"[SaveDataStore] 저장 (PlayerPrefs): {logSummary}");
                 return;
             }
 
@@ -192,7 +245,7 @@ namespace CoffeeSpec.Core
                 {
                     File.Move(tempPath, path);
                 }
-                Debug.Log($"[SaveDataStore] 저장: LastPlayedStage={save.LastPlayedStage}, HighestClearedStage={save.HighestClearedStage} ({path})");
+                Debug.Log($"[SaveDataStore] 저장: {logSummary} ({path})");
             }
             catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
             {
