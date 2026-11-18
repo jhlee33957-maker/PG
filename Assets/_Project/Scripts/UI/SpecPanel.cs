@@ -52,6 +52,8 @@ namespace CoffeeSpec.UI
         [SerializeField] private TMP_Text _lineNumberText;
         [Tooltip("줄 번호를 최소 몇 줄까지 보여 줄지. 코드 에디터처럼 아래쪽에 빈 줄 번호가 이어지게 한다")]
         [SerializeField, Min(1)] private int _minLineCount = 10;
+        [Tooltip("기획서 줄 간격 (TMP Line Spacing, 글자 크기의 1/100 단위). 위아래 줄의 빈칸 상자가 겹치지 않을 만큼 띄운다. 줄 번호에도 같은 값이 들어간다")]
+        [SerializeField] private float _lineSpacing = 45f;
         [SerializeField] private Button _btnBuild;
         [Tooltip("빌드 버튼 글자 (선택). 할당하면 빌드 가능 여부에 따라 글자 색이 바뀐다")]
         [SerializeField] private TMP_Text _buildLabel;
@@ -161,6 +163,44 @@ namespace CoffeeSpec.UI
         /// </summary>
         public event Action<IReadOnlyList<Sentence>> PreviewStarted;
 
+        // ---------------- 튜토리얼 연결 (TutorialDirector가 쓴다) ----------------
+
+        /// <summary>플레이어가 단어를 끌어다 빈칸에 넣었을 때 (빈칸 번호, 단어 묶음에서의 번호).</summary>
+        public event Action<int, int> OptionAssigned;
+
+        /// <summary>리셋 버튼으로 단어를 모두 단어 바로 돌려보낸 뒤.</summary>
+        public event Action WordsReset;
+
+        /// <summary>기획서가 열린 뒤 (처음 시작, 리트 후 다시 열기).</summary>
+        public event Action Opened;
+
+        /// <summary>기획서가 닫힌 뒤 (빌드). Built보다 먼저 불린다.</summary>
+        public event Action Closed;
+
+        /// <summary>미리보기로 본문을 접거나(true) 다시 펼쳤을 때(false).</summary>
+        public event Action<bool> StageViewChanged;
+
+        /// <summary>튜토리얼이 막을 수 있는 버튼·키 동작.</summary>
+        public enum GuardedAction
+        {
+            Build,      // BTN_Build, B키
+            Preview,    // 미리보기 버튼으로 본문 접기
+            Return,     // 미리보기 중 Return 버튼, R키로 다시 펼치기
+            Reset,      // BTN_Reset
+            Retry       // 플레이 중 BTN_Retry, R키
+        }
+
+        /// <summary>
+        /// 버튼·키 동작을 허용할지 묻는다. 비어 있으면 모두 허용. false를 돌려주면 누르지 않은 것과 같다.
+        /// </summary>
+        public Func<GuardedAction, bool> ActionGate { get; set; }
+
+        /// <summary>
+        /// 끌던 단어를 놓을 때 허용할지 묻는다 (단어 묶음에서의 번호, 놓은 빈칸 번호 / 빈칸이 아니면 -1).
+        /// 비어 있으면 모두 허용. false면 아무 일도 없이 단어가 원래 자리에 그대로 남는다.
+        /// </summary>
+        public Func<int, int, bool> PlacementFilter { get; set; }
+
         /// <summary>기획서가 열려 있는 동안(미리보기 포함) true. 플레이어 조작을 막는 데 쓴다.</summary>
         public static bool IsAnyOpen { get; private set; }
 
@@ -253,11 +293,12 @@ namespace CoffeeSpec.UI
             // 기획서가 열려 있을 때는 무시 (플레이 중에만 리트)
             if (!IsOpen && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
             {
-                RequestRetry();
+                RequestRetry();   // 튜토리얼 허용 여부는 RequestRetry 안에서 본다
             }
             // 미리보기(접힌 상태)에서는 R키가 오른쪽 위 Return 버튼과 같이 기획서를 다시 펼친다.
             // 이때는 IsOpen이 true라 위의 리트는 불리지 않는다. ESC 메뉴가 떠 있으면 메뉴가 닫힐 때 되돌릴 시간 값이 꼬이므로 받지 않는다
-            else if (IsViewingStage && !PauseMenu.IsOpen && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame)
+            else if (IsViewingStage && !PauseMenu.IsOpen && Keyboard.current != null && Keyboard.current.rKey.wasPressedThisFrame
+                     && IsActionAllowed(GuardedAction.Return))
             {
                 SetStageView(false);
             }
@@ -525,7 +566,7 @@ namespace CoffeeSpec.UI
             }
             if (_btnPreview != null)
             {
-                _btnPreview.onClick.AddListener(() => SetStageView(!IsViewingStage));
+                _btnPreview.onClick.AddListener(OnClickPreview);
             }
             if (_btnReset != null)
             {
@@ -662,6 +703,7 @@ namespace CoffeeSpec.UI
         private void SetupTextAppearance()
         {
             _documentText.textWrappingMode = TextWrappingModes.NoWrap;
+            _documentText.lineSpacing = _lineSpacing;
 
             if (_lineNumberText != null)
             {
@@ -732,6 +774,7 @@ namespace CoffeeSpec.UI
             SetResetButtonVisible(true);
 
             RefreshAll();
+            Opened?.Invoke();
         }
 
         private void Close()
@@ -751,6 +794,7 @@ namespace CoffeeSpec.UI
             PlacePreviewButton(false);
             SetPreviewButtonVisible(false);
             SetResetButtonVisible(false);
+            Closed?.Invoke();
         }
 
         /// <summary>
@@ -788,6 +832,18 @@ namespace CoffeeSpec.UI
                 Time.timeScale = 0f;
                 RefreshAll();
             }
+            StageViewChanged?.Invoke(viewing);
+        }
+
+        // 미리보기 버튼: 펼쳐져 있으면 접고(PreView), 접혀 있으면 다시 펼친다(Return)
+        private void OnClickPreview()
+        {
+            bool viewing = !IsViewingStage;
+            if (!IsActionAllowed(viewing ? GuardedAction.Preview : GuardedAction.Return))
+            {
+                return;
+            }
+            SetStageView(viewing);
         }
 
         // 기획서가 열려 있는 동안(접힌 상태 포함)만 보인다. 플레이 중에는 숨긴다
@@ -861,7 +917,7 @@ namespace CoffeeSpec.UI
         /// </summary>
         private void ResetWords()
         {
-            if (!IsOpen || IsViewingStage)
+            if (!IsOpen || IsViewingStage || !IsActionAllowed(GuardedAction.Reset))
             {
                 return;
             }
@@ -888,6 +944,7 @@ namespace CoffeeSpec.UI
             }
 
             RefreshAll();
+            WordsReset?.Invoke();
         }
         private void SetRetryButtonVisible(bool visible)
         {
@@ -1017,6 +1074,14 @@ namespace CoffeeSpec.UI
                 return;
             }
 
+            // 튜토리얼이 허용하지 않은 자리면 아무 일도 없다 (끌던 단어는 원래 자리에 그대로 있다)
+            if (PlacementFilter != null && !PlacementFilter(option, targetBlank))
+            {
+                RefreshAll();
+                return;
+            }
+
+            int assignedBlank = -1;
             if (targetBlank >= 0)
             {
                 // 같은 빈칸에 다시 놓으면 아무 일도 없다
@@ -1024,6 +1089,7 @@ namespace CoffeeSpec.UI
                 {
                     int displaced = _blankToOption[targetBlank];
                     AssignOption(targetBlank, option);
+                    assignedBlank = targetBlank;
 
                     // 이미 단어가 있는 빈칸에 놓으면, 들어 있던 단어는 집어 든 단어의 원래 자리로 간다.
                     // 빈칸끼리면 AssignOption이 자리를 바꾸고, 바·화면 칩에서 왔으면 그 자리로 보낸다.
@@ -1052,6 +1118,10 @@ namespace CoffeeSpec.UI
             }
 
             RefreshAll();
+            if (assignedBlank >= 0)
+            {
+                OptionAssigned?.Invoke(assignedBlank, option);
+            }
         }
 
         private void CancelDrag()
@@ -1250,7 +1320,7 @@ namespace CoffeeSpec.UI
 
         private void OnClickBuild()
         {
-            if (!IsOpen || !CanBuild())
+            if (!IsOpen || !CanBuild() || !IsActionAllowed(GuardedAction.Build))
             {
                 return;
             }
@@ -1271,7 +1341,7 @@ namespace CoffeeSpec.UI
 
         private void RequestRetry()
         {
-            if (IsOpen)
+            if (IsOpen || !IsActionAllowed(GuardedAction.Retry))
             {
                 return;
             }
@@ -1823,6 +1893,280 @@ namespace CoffeeSpec.UI
                 }
             }
             return 0;
+        }
+
+        // ---------------- 튜토리얼용 정보 ----------------
+
+        private bool IsActionAllowed(GuardedAction action)
+        {
+            return ActionGate == null || ActionGate(action);
+        }
+
+        /// <summary>단어 묶음. 단어 묶음에서의 번호로 어떤 단어인지 볼 때 쓴다.</summary>
+        public IReadOnlyList<WordId> WordPool => _spec != null ? _spec.WordPool : Array.Empty<WordId>();
+
+        /// <summary>문장 줄 수 (숨긴 문장 포함). 초기화 전이면 0.</summary>
+        public int SentenceCount => _templates != null ? _templates.Count : 0;
+
+        /// <summary>문장의 slot번째 빈칸 전체 번호. 없으면 -1.</summary>
+        public int GetBlankIndex(int sentenceIndex, int slot)
+        {
+            if (_templates == null || sentenceIndex < 0 || sentenceIndex >= _templates.Count
+                || slot < 0 || slot >= _templates[sentenceIndex].Pattern.Count)
+            {
+                return -1;
+            }
+            return _blankOffsets[sentenceIndex] + slot;
+        }
+
+        /// <summary>문장이 숨긴 문장(기획서에 안 보임)인지.</summary>
+        public bool IsSentenceHidden(int sentenceIndex)
+        {
+            int s = 0;
+            foreach (StageSpec.Line line in _lines)
+            {
+                if (line.Kind != StageSpec.LineKind.Sentence)
+                {
+                    continue;
+                }
+                if (s == sentenceIndex)
+                {
+                    return line.Hidden;
+                }
+                s++;
+            }
+            return false;
+        }
+
+        /// <summary>빈칸에 들어 있는 단어(묶음에서의 번호). 비었거나 번호가 틀리면 -1.</summary>
+        public int GetOptionInBlank(int blankIndex)
+        {
+            return _blankToOption != null && blankIndex >= 0 && blankIndex < _blankToOption.Length ? _blankToOption[blankIndex] : -1;
+        }
+
+        /// <summary>단어(묶음에서의 번호)가 들어가 있는 빈칸. 안 쓰였으면 -1.</summary>
+        public int GetBlankOfOption(int optionIndex)
+        {
+            return _optionToBlank != null && optionIndex >= 0 && optionIndex < _optionToBlank.Length ? _optionToBlank[optionIndex] : -1;
+        }
+
+        public bool IsBlankLocked(int blankIndex)
+        {
+            return _lockedBlanks != null && blankIndex >= 0 && blankIndex < _lockedBlanks.Length && _lockedBlanks[blankIndex];
+        }
+
+        /// <summary>빈칸이 받는 품사 (문장 틀의 Pattern). 없으면 null.</summary>
+        public IReadOnlyList<WordType> GetSlotTypes(int blankIndex)
+        {
+            if (_templates == null || blankIndex < 0 || _blankToOption == null || blankIndex >= _blankToOption.Length)
+            {
+                return null;
+            }
+            int sentence = SentenceOfBlank(blankIndex);
+            var pattern = _templates[sentence].Pattern;
+            int slot = blankIndex - _blankOffsets[sentence];
+            return slot >= 0 && slot < pattern.Count ? pattern[slot] : null;
+        }
+
+        /// <summary>빈칸 상자(글자 + 여백)의 화면 좌표 사각형. 빈칸이 화면에 그려져 있지 않으면 false.</summary>
+        public bool TryGetBlankScreenRect(int blankIndex, out Rect screenRect)
+        {
+            screenRect = default;
+            if (!_initialized || !IsOpen || IsViewingStage || !_documentText.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            TMP_TextInfo info = _documentText.textInfo;
+            string wanted = BlankLinkPrefix + blankIndex;
+            for (int i = 0; i < info.linkCount; i++)
+            {
+                TMP_LinkInfo link = info.linkInfo[i];
+                if (link.GetLinkID() != wanted || !TryGetLinkBounds(info, link, out Vector2 min, out Vector2 max))
+                {
+                    continue;
+                }
+                screenRect = TextRectToScreen(min - _boxPadding, max + _boxPadding);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// 기획서에 보이는 문장 줄 전체(주석·빈 줄 제외)를 감싸는 화면 좌표 사각형.
+        /// 빈칸이 하나라도 있는 줄의 글자를 모두 감싼다.
+        /// </summary>
+        public bool TryGetSentenceLinesScreenRect(out Rect screenRect)
+        {
+            screenRect = default;
+            if (!_initialized || !IsOpen || IsViewingStage || !_documentText.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+
+            TMP_TextInfo info = _documentText.textInfo;
+            var lines = new HashSet<int>();
+            for (int i = 0; i < info.linkCount; i++)
+            {
+                TMP_LinkInfo link = info.linkInfo[i];
+                if (!link.GetLinkID().StartsWith(BlankLinkPrefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                int first = link.linkTextfirstCharacterIndex;
+                if (first >= 0 && first < info.characterCount)
+                {
+                    lines.Add(info.characterInfo[first].lineNumber);
+                }
+            }
+
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
+            Vector2 max = new Vector2(float.MinValue, float.MinValue);
+            bool any = false;
+            for (int c = 0; c < info.characterCount; c++)
+            {
+                TMP_CharacterInfo ch = info.characterInfo[c];
+                if (!ch.isVisible || !lines.Contains(ch.lineNumber))
+                {
+                    continue;
+                }
+                TMP_LineInfo line = info.lineInfo[ch.lineNumber];
+                min = Vector2.Min(min, new Vector2(ch.bottomLeft.x, line.descender));
+                max = Vector2.Max(max, new Vector2(ch.topRight.x, line.ascender));
+                any = true;
+            }
+            if (!any)
+            {
+                return false;
+            }
+            screenRect = TextRectToScreen(min - _boxPadding, max + _boxPadding);
+            return true;
+        }
+
+        /// <summary>단어 칩(하단 바 또는 화면 위에 놓인 칩)의 화면 좌표 사각형. 칩이 숨겨져 있으면(빈칸에 들어감) false.</summary>
+        public bool TryGetOptionScreenRect(int optionIndex, out Rect screenRect)
+        {
+            screenRect = default;
+            if (optionIndex < 0 || optionIndex >= _optionButtons.Count || !_optionButtons[optionIndex].gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+            screenRect = UIRectToScreen((RectTransform)_optionButtons[optionIndex].transform);
+            return true;
+        }
+
+        /// <summary>튜토리얼이 가리킬 수 있는 버튼.</summary>
+        public enum PanelButton
+        {
+            Build,
+            Preview,   // 미리보기 중에는 오른쪽 위 Return 버튼 자리
+            Reset,
+            Retry
+        }
+
+        /// <summary>버튼의 화면 좌표 사각형. 버튼이 없거나 숨겨져 있으면 false.</summary>
+        public bool TryGetButtonScreenRect(PanelButton which, out Rect screenRect)
+        {
+            screenRect = default;
+            Button button = null;
+            switch (which)
+            {
+                case PanelButton.Build: button = _btnBuild; break;
+                case PanelButton.Preview: button = _btnPreview; break;
+                case PanelButton.Reset: button = _btnReset; break;
+                case PanelButton.Retry: button = _btnRetry; break;
+            }
+            if (button == null || !button.gameObject.activeInHierarchy)
+            {
+                return false;
+            }
+            screenRect = UIRectToScreen((RectTransform)button.transform);
+            return true;
+        }
+
+        /// <summary>지금 빈칸마다 들어 있는 단어를 복사해 둔다 (RestoreAssignments로 되돌린다).</summary>
+        public int[] SnapshotAssignments()
+        {
+            return _blankToOption != null ? (int[])_blankToOption.Clone() : null;
+        }
+
+        /// <summary>
+        /// SnapshotAssignments로 복사해 둔 상태로 빈칸을 되돌린다. 고정 빈칸은 건드리지 않는다.
+        /// 다시 들어가는 단어는 타이핑 연출로 채워진다.
+        /// </summary>
+        public void RestoreAssignments(int[] snapshot)
+        {
+            if (!Initialize() || snapshot == null || snapshot.Length != _blankToOption.Length)
+            {
+                return;
+            }
+
+            CancelDrag();
+
+            // 먼저 달라진 빈칸을 비운다 (빈 자리끼리 맞바꾸기가 일어나지 않게)
+            for (int blank = 0; blank < _blankToOption.Length; blank++)
+            {
+                int current = _blankToOption[blank];
+                if (_lockedBlanks[blank] || current == snapshot[blank])
+                {
+                    continue;
+                }
+                ClearBlank(blank);
+                if (current >= 0)
+                {
+                    ReturnToBar(current);
+                }
+            }
+
+            for (int blank = 0; blank < _blankToOption.Length; blank++)
+            {
+                int option = snapshot[blank];
+                if (_lockedBlanks[blank] || option < 0 || option >= _optionButtons.Count || _blankToOption[blank] == option)
+                {
+                    continue;
+                }
+                AssignOption(blank, option);
+            }
+
+            RefreshAll();
+        }
+
+        // 기획서 텍스트 좌표(로컬)의 사각형을 화면 좌표로
+        private Rect TextRectToScreen(Vector2 localMin, Vector2 localMax)
+        {
+            RectTransform textRect = _documentText.rectTransform;
+            Camera camera = EventCameraOf(_documentText.canvas);
+            Vector2 a = RectTransformUtility.WorldToScreenPoint(camera, textRect.TransformPoint(localMin));
+            Vector2 b = RectTransformUtility.WorldToScreenPoint(camera, textRect.TransformPoint(localMax));
+            return Rect.MinMaxRect(Mathf.Min(a.x, b.x), Mathf.Min(a.y, b.y), Mathf.Max(a.x, b.x), Mathf.Max(a.y, b.y));
+        }
+
+        private static Rect UIRectToScreen(RectTransform rect)
+        {
+            var corners = new Vector3[4];
+            rect.GetWorldCorners(corners);
+            Graphic graphic = rect.GetComponent<Graphic>();
+            Canvas canvas = graphic != null ? graphic.canvas : rect.GetComponentInParent<Canvas>();
+            Camera camera = EventCameraOf(canvas);
+            Vector2 min = new Vector2(float.MaxValue, float.MaxValue);
+            Vector2 max = new Vector2(float.MinValue, float.MinValue);
+            foreach (Vector3 corner in corners)
+            {
+                Vector2 point = RectTransformUtility.WorldToScreenPoint(camera, corner);
+                min = Vector2.Min(min, point);
+                max = Vector2.Max(max, point);
+            }
+            return Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        }
+
+        private static Camera EventCameraOf(Canvas canvas)
+        {
+            if (canvas == null)
+            {
+                return null;
+            }
+            Canvas root = canvas.rootCanvas;
+            return root.renderMode == RenderMode.ScreenSpaceOverlay ? null : root.worldCamera;
         }
 
         // ---------------- 공용 ----------------
